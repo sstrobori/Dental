@@ -61,14 +61,14 @@ export default function PatientShell({
       <div className="patient-page-bottom relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 pt-4 sm:px-6 sm:pt-6 lg:px-8">
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-[#e4d5f6] bg-white/90 px-4 py-3 shadow-[0_12px_35px_rgba(73,43,104,0.08)] backdrop-blur sm:px-5 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#6d3aa8] text-white shadow-[0_8px_20px_rgba(109,58,168,0.25)] sm:h-12 sm:w-12">
+            <span className="grid h-11 w-11 shrink-0 place-items-center text-[#6D3AA8] sm:h-12 sm:w-12">
               <ToothMark />
             </span>
             <div className="min-w-0">
               <p className="truncate text-base font-bold tracking-[-0.01em] text-[#2e1747] sm:text-lg">
-                {clinicName || "Patient portal"}
+                Dental Queue & Appointment Management
               </p>
-              <p className="text-xs font-medium text-[#756581] sm:text-sm">Dental care, made simpler</p>
+              <p className="text-xs font-medium text-[#756581] sm:text-sm">Easy appointments, less waiting</p>
             </div>
           </div>
           <span className="hidden rounded-full border border-[#e4d5f6] bg-[#f7f2ff] px-3 py-1.5 text-xs font-semibold text-[#6d3aa8] sm:inline-flex">

@@ -40,7 +40,7 @@ export default function LoginPage() {
         <section className="w-full rounded-3xl border border-[#e4d5f6] bg-white p-5 shadow-[0_24px_70px_rgba(73,43,104,0.12)] sm:p-8">
           <div className="flex items-center gap-3">
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#6d3aa8] text-sm font-extrabold text-white shadow-lg shadow-purple-900/10">CF</span>
-            <div><p className="text-lg font-extrabold">ChairFlow</p><p className="text-xs font-medium text-[#756581]">Clinic workspace</p></div>
+            <div><p className="text-lg font-extrabold">Dental Queue and Appointment Management</p><p className="text-xs font-medium text-[#756581]">Dental Clinic workspace</p></div>
           </div>
           <div className="mt-7">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8b5cb5]">Staff access</p>

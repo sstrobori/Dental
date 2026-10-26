@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ChairFlow Dental Queue",
-  description: "Dental queue and appointment management.",
+  title: "Dental Queue and Appointment Management",
+  description: "Easy appointments, less waiting",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

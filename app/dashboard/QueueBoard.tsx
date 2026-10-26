@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { createClient } from "@/lib/supabase/client";
 import { formatTime, startOfTodayManila } from "@/lib/today";
 import { getArrivalTiming } from "@/lib/queuePolicy";
+import ClinicControls from "./ClinicControls";
 
 type Status = "waiting" | "called" | "served" | "skipped" | "no_show" | "cancelled";
 
@@ -30,6 +31,26 @@ type SyncState = "connecting" | "live" | "fallback" | "offline";
 
 const REASONS = ["Checkup", "Toothache", "Cleaning", "Braces", "Other"];
 
+
+const PH_MOBILE_PATTERN = /^(?:09\d{9}|\+639\d{9})$/;
+
+function normalizeMobileInput(value: string): string {
+  // Remove spaces, hyphens, and other formatting characters.
+  const cleaned = value.replace(/[^\d+]/g, "");
+
+  // Keep only a single leading plus sign.
+  const normalized = cleaned.startsWith("+")
+    ? "+" + cleaned.slice(1).replace(/\+/g, "")
+    : cleaned.replace(/\+/g, "");
+
+  // Local: 11 digits.
+  // International: +63 plus 10 digits (13 characters total).
+  const maxLength = normalized.startsWith("+") ? 13 : 11;
+
+  return normalized.slice(0, maxLength);
+}
+
+
 // Patients type their own names, so anything written into a printed page must be escaped.
 function escapeHtml(s: string) {
   const map: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -39,18 +60,20 @@ function escapeHtml(s: string) {
 export default function QueueBoard({
   clinicId,
   clinicName,
+  acceptingJoins,
   initialGraceMinutes,
   initial,
 }: {
   clinicId: string;
   clinicName: string;
+  acceptingJoins: boolean;
   initialGraceMinutes: number;
   initial: Entry[];
 }) {
   const supabase = createClient();
   const [entries, setEntries] = useState<Entry[]>(initial);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState("09");
   const [reason, setReason] = useState("");
   const [isMinor, setIsMinor] = useState(false);
   const [guardian, setGuardian] = useState("");
@@ -153,8 +176,19 @@ export default function QueueBoard({
     setPendingId(id);
     const now = new Date().toISOString();
     const patch: Record<string, string> = { status };
-    if (status === "called") patch.called_at = now;
-    if (status === "waiting") patch.queued_at = now;
+
+    if (status === "called") {
+      patch.called_at = now;
+    }
+
+    if (status === "waiting") {
+      patch.queued_at = now;
+    }
+
+    if (status === "served") {
+      patch.finished_at = now;
+      patch.served_at = now;
+    }
     const { error } = await supabase.from("queue_entries").update(patch).eq("id", id);
     setPendingId("");
     if (error) {
@@ -200,15 +234,27 @@ export default function QueueBoard({
       setError("No internet connection. Nothing changed. Reconnect, then try again.");
       return;
     }
-    if (!name.trim()) return setError("Enter the patient's name.");
-    if (isMinor && !guardian.trim()) return setError("Enter the parent or guardian's name.");
+    if (!name.trim()) {
+      return setError("Enter the patient's name.");
+    }
+
+    if (phone !== "" && phone !== "09" && !PH_MOBILE_PATTERN.test(phone)) {
+      return setError(
+        "Enter a valid Philippine mobile number: 09171234567 or +639171234567."
+      );
+    }
+
+    if (isMinor && !guardian.trim()) {
+      return setError("Enter the parent or guardian's name.");
+    }
+
     setAdding(true);
     const { data, error } = await supabase
       .from("queue_entries")
       .insert({
         clinic_id: clinicId,
         name: name.trim(),
-        phone: phone.trim() || null,
+        phone: phone === "09" ? null : phone.trim() || null,
         visit_reason: reason || null,
         is_minor: isMinor,
         guardian_name: isMinor ? guardian.trim() : null,
@@ -218,7 +264,7 @@ export default function QueueBoard({
     setAdding(false);
     if (error) return setError(error.message);
     setNotice(`${name.trim()} is #${data.queue_number}. Tell the patient their number.`);
-    setName(""); setPhone(""); setReason(""); setIsMinor(false); setGuardian("");
+    setName(""); setPhone("09"); setReason(""); setIsMinor(false); setGuardian("");
     refresh();
   }
 
@@ -285,38 +331,58 @@ export default function QueueBoard({
   const displayUrl = `${origin}/display/${clinicId}`;
 
   return (
-    <div className="flex flex-col gap-5 text-[#2E1747] sm:gap-6">
-      <header className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-6">
+    <div className="mt-6 flex flex-col gap-5 text-[#2E1747] sm:mt-8 sm:gap-6">
+
+
+    {/* Live Queue and Online Queue Joining */}
+
+    <header className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm">
+
+      {/* Live Queue Header */}
+
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:p-6">
+
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8151AE]">Today&apos;s operations</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Live queue</h1>
-          <p className="mt-1 text-sm text-[#756581]">Call patients, manage late arrivals, and keep the front desk moving.</p>
-          <p
-            role="status"
-            className={`mt-3 inline-flex min-h-8 items-center rounded-full px-3 py-1.5 text-xs font-semibold ${
-              syncState === "live"
-                ? "bg-emerald-50 text-emerald-700"
-                : syncState === "offline"
-                  ? "bg-red-50 text-red-700"
-                  : "bg-amber-50 text-amber-800"
-            }`}
-            title={lastSyncedAt ? `Last refreshed ${lastSyncedAt.toLocaleTimeString("en-PH")}` : undefined}
-          >
-            {syncState === "live" && "● Live sync connected"}
-            {syncState === "connecting" && "Connecting to live updates…"}
-            {syncState === "fallback" && "Reconnecting · backup refresh active"}
-            {syncState === "offline" && "Offline · changes are not being sent"}
+          <h1 className="text-2xl font-bold tracking-tight text-[#2E1747] sm:text-3xl">
+            Live queue
+          </h1>
+
+          <p className="mt-1 text-sm text-[#756581]">
+            Call patients, manage late arrivals, and keep the front desk moving.
           </p>
         </div>
+
         <button
           type="button"
-          onClick={() => next && setStatus(next.id, "called")}
-          disabled={!next || !!pendingId || syncState === "offline"}
-          className="mt-4 min-h-12 w-full shrink-0 rounded-xl bg-[#6D3AA8] px-6 py-3 font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-45 sm:mt-0 sm:w-auto"
+          onClick={() =>
+            next && setStatus(next.id, "called")
+          }
+          disabled={
+            !next ||
+            !!pendingId ||
+            syncState === "offline"
+          }
+          className="min-h-12 w-full shrink-0 rounded-xl bg-[#6D3AA8] px-6 py-3 font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
         >
-          {pendingId === next?.id ? "Calling…" : next ? `Call next · #${next.queue_number}` : "Queue is empty"}
+          {pendingId === next?.id
+            ? "Calling…"
+            : next
+              ? `Call next · #${next.queue_number}`
+              : "Queue is empty"}
         </button>
-      </header>
+
+      </div>
+
+      {/* Online Queue Joining - Integrated */}
+
+      <ClinicControls
+        clinicId={clinicId}
+        acceptingJoins={acceptingJoins}
+      />
+
+    </header>
+
+
 
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{notice}</p>}
@@ -453,10 +519,38 @@ export default function QueueBoard({
               <label htmlFor="walkin-name" className="mb-1.5 block text-sm font-semibold">Patient name</label>
               <input id="walkin-name" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
+
             <div>
-              <label htmlFor="walkin-phone" className="mb-1.5 block text-sm font-semibold">Mobile number <span className="font-normal text-[#756581]">(optional)</span></label>
-              <input id="walkin-phone" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="e.g. 0917 123 4567" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <label
+                htmlFor="walkin-phone"
+                className="mb-1.5 block text-sm font-semibold"
+              >
+                Mobile number{" "}
+                <span className="font-normal text-[#756581]">
+                  (optional)
+                </span>
+              </label>
+
+              <input
+                id="walkin-phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                maxLength={13}
+                className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]"
+                placeholder="09171234567"
+                value={phone}
+                onChange={(e) =>
+                  setPhone(normalizeMobileInput(e.target.value))
+                }
+              />
+
+              <p className="mt-1.5 text-xs text-[#756581]">
+                Enter 11 digits starting with 09, or +63 followed by
+                10 digits starting with 9.
+              </p>
             </div>
+
             <div>
               <label htmlFor="walkin-reason" className="mb-1.5 block text-sm font-semibold">Reason for visit <span className="font-normal text-[#756581]">(optional)</span></label>
               <select id="walkin-reason" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -497,7 +591,7 @@ export default function QueueBoard({
         ))}
       </section>
 
-      <details className="group rounded-2xl border border-[#E4D5F6] bg-white shadow-sm">
+      <details className="group mb-6 rounded-2xl border border-[#E4D5F6] bg-white shadow-sm sm:mb-8">
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-bold text-[#2E1747] sm:px-5">
           <span>Share the patient queue</span>
           <span className="text-xl text-[#6D3AA8] transition group-open:rotate-45" aria-hidden="true">+</span>

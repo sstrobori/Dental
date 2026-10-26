@@ -265,8 +265,6 @@ export default function PatientsPage() {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-[#756581]">Select two patient records to merge duplicates.</p>
-
       <section className="admin-card mt-8 p-4 sm:p-6">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8b5cb5]">Bulk tools</p>
         <h2 className="mt-1 text-lg font-bold">Import existing patients</h2>

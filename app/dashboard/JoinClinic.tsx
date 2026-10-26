@@ -94,7 +94,7 @@ export default function JoinClinic({ email }: { email: string }) {
             <input
               id="new-clinic-name"
               className="mt-2 min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 outline-none placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]"
-              placeholder="e.g. Test Dental"
+              placeholder="e.g. Dental Queue and Appointment Management"
               value={clinicName}
               onChange={(e) => setClinicName(e.target.value)}
             />

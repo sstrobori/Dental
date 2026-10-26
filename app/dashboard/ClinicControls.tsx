@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -8,53 +9,104 @@ export default function ClinicControls({
   acceptingJoins,
 }: {
   clinicId: string;
-  role: string;
   acceptingJoins: boolean;
 }) {
   const supabase = createClient();
+
   const [open, setOpen] = useState(acceptingJoins);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function toggle() {
     setError("");
+
     const next = !open;
     setBusy(true);
-    const { error } = await supabase.rpc("set_accepting_joins", { p_clinic_id: clinicId, p_value: next });
+
+    const { error } = await supabase.rpc(
+      "set_accepting_joins",
+      {
+        p_clinic_id: clinicId,
+        p_value: next,
+      }
+    );
+
     setBusy(false);
-    if (error) return setError(error.message);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
     setOpen(next);
   }
 
   return (
-    <section className="mb-5 rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:mb-6 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-5">
+    <div className="flex flex-col gap-3 border-t border-[#E4D5F6] bg-[#FAF8FF] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:px-6">
       <div className="flex min-w-0 items-start gap-3">
-        <span className={`mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl ${open ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`} aria-hidden="true">
-          <span className={`size-3 rounded-full ${open ? "bg-emerald-500" : "bg-amber-500"}`} />
+        <span
+          className={`mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl ${
+            open
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-amber-50 text-amber-700"
+          }`}
+          aria-hidden="true"
+        >
+          <span
+            className={`size-3 rounded-full ${
+              open ? "bg-emerald-500" : "bg-amber-500"
+            }`}
+          />
         </span>
+
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-bold text-[#2E1747]">Online queue joining</h2>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${open ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+            <h2 className="font-bold text-[#2E1747]">
+              Online queue joining
+            </h2>
+
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                open
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-800"
+              }`}
+            >
               {open ? "Open" : "Paused"}
             </span>
           </div>
+
           <p className="mt-1 text-sm leading-5 text-[#756581]">
-            {open ? "Patients can join the live queue from the clinic link." : "New online queue entries are temporarily paused."}
+            {open
+              ? "Patients can join the live queue from the clinic link."
+              : "New online queue entries are temporarily paused."}
           </p>
-          {error && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{error}</p>}
+
+          {error && (
+            <p
+              role="alert"
+              className="mt-2 text-sm font-medium text-red-700"
+            >
+              {error}
+            </p>
+          )}
         </div>
       </div>
+
       <button
         type="button"
         onClick={toggle}
         disabled={busy}
         aria-pressed={open}
         aria-busy={busy}
-        className="mt-4 min-h-11 w-full shrink-0 rounded-xl border border-[#D7C4EA] bg-white px-4 py-2.5 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0 sm:w-auto"
+        className="min-h-11 w-full shrink-0 rounded-xl border border-[#D7C4EA] bg-white px-4 py-2.5 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
-        {busy ? "Saving…" : open ? "Pause online joining" : "Resume online joining"}
+        {busy
+          ? "Saving…"
+          : open
+            ? "Pause online joining"
+            : "Resume online joining"}
       </button>
-    </section>
+    </div>
   );
 }
