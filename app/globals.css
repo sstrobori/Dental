@@ -24,3 +24,136 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Patient-only design system. Everything is scoped so the admin UI remains unchanged. */
+.patient-ui {
+  --patient-canvas: #faf8ff;
+  --patient-surface: #ffffff;
+  --patient-soft: #f2eaff;
+  --patient-border: #e4d5f6;
+  --patient-primary: #6d3aa8;
+  --patient-primary-hover: #572c87;
+  --patient-ink: #2e1747;
+  --patient-muted: #756581;
+  color-scheme: light;
+  color: var(--patient-ink);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+.patient-ui input:not([type="checkbox"]):not([type="radio"]),
+.patient-ui select,
+.patient-ui textarea {
+  min-height: 3rem;
+  width: 100%;
+  border: 1px solid var(--patient-border);
+  border-radius: 0.875rem;
+  background: #fff;
+  color: var(--patient-ink);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.patient-ui input:not([type="checkbox"]):not([type="radio"]):focus,
+.patient-ui select:focus,
+.patient-ui textarea:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.14);
+}
+
+.patient-ui input::placeholder,
+.patient-ui textarea::placeholder {
+  color: #9a8fa5;
+}
+
+.patient-ui input[type="checkbox"],
+.patient-ui input[type="radio"] {
+  height: 1.15rem;
+  width: 1.15rem;
+  flex: 0 0 auto;
+  accent-color: var(--patient-primary);
+}
+
+.patient-ui button,
+.patient-ui a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.patient-ui :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid rgba(124, 58, 237, 0.35);
+  outline-offset: 2px;
+}
+
+.patient-card {
+  border: 1px solid var(--patient-border);
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 50px rgba(73, 43, 104, 0.09);
+}
+
+.patient-page-bottom {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+.patient-mobile-nav {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  .patient-page-bottom {
+    padding-bottom: 2rem;
+  }
+
+  .patient-mobile-nav {
+    padding-bottom: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .patient-ui *,
+  .patient-ui *::before,
+  .patient-ui *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Admin-only design system, isolated from the patient portal. */
+.admin-ui {
+  --admin-surface: #ffffff;
+  --admin-soft: #f2eaff;
+  --admin-border: #e4d5f6;
+  --admin-primary: #6d3aa8;
+  --admin-ink: #2e1747;
+  color-scheme: light;
+  color: var(--admin-ink);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+.admin-ui input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.admin-ui select,
+.admin-ui textarea {
+  min-height: 2.75rem;
+  border-color: var(--admin-border);
+  border-radius: 0.75rem;
+  background-color: #fff;
+  color: var(--admin-ink);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.admin-ui input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+.admin-ui select:focus,
+.admin-ui textarea:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.12);
+}
+
+.admin-ui input[type="checkbox"], .admin-ui input[type="radio"] { accent-color: var(--admin-primary); }
+.admin-ui :is(button, a, input, select, textarea):focus-visible { outline: 3px solid rgba(124, 58, 237, 0.3); outline-offset: 2px; }
+.admin-ui button, .admin-ui a { -webkit-tap-highlight-color: transparent; }
+.admin-card { border: 1px solid var(--admin-border); border-radius: 1rem; background: var(--admin-surface); box-shadow: 0 12px 34px rgba(73, 43, 104, 0.07); }
