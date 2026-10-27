@@ -33,7 +33,8 @@ export function formatDateTime(iso: string): string {
 export function estimateLabel(minutes: number | null | undefined): string {
   if (minutes === null || minutes === undefined) return "";
   if (minutes <= 0) return "Estimated turn: any moment now";
-  const t = new Date(Math.round((Date.now() + minutes * 60000) / 300000) * 300000); // nearest 5 minutes
+  const roundedMinutes = Math.ceil(minutes);
+  const t = new Date(Math.ceil((Date.now() + roundedMinutes * 60000) / 300000) * 300000); // next 5 minutes
   const clock = t.toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit" });
-  return `Estimated turn: around ${clock} (about ${minutes} min)`;
+  return `Estimated turn: around ${clock} (about ${roundedMinutes} min)`;
 }

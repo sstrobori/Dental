@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useVisitReasons } from "@/lib/useVisitReasons";
 
-const REASONS = ["Checkup", "Toothache", "Cleaning", "Braces", "Other"];
+
 const FIELD_CLASS = "min-h-11 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm text-[#2E1747] outline-none transition placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]";
 
 export default function DepositSettings({ clinicId, isOwner }: { clinicId: string; isOwner: boolean }) {
@@ -16,6 +17,7 @@ export default function DepositSettings({ clinicId, isOwner }: { clinicId: strin
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const { names: REASONS } = useVisitReasons(clinicId, "staff");
 
   useEffect(() => {
     let active = true;

@@ -94,7 +94,7 @@ export default function ReportsPage() {
     : "Selected month";
 
   return (
-    <main className="mx-auto w-full max-w-6xl pb-10 text-[#2E1747]">
+    <main className="w-full px-4 pb-10 text-[#2E1747] sm:px-6 lg:px-8">
 
       {error && <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</p>}
       {!loaded && <p role="status" className="mt-5 rounded-2xl border border-[#E4D5F6] bg-white p-5 text-sm text-[#756581]">Loading report…</p>}

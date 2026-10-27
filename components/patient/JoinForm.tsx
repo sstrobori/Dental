@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useVisitReasons } from "@/lib/useVisitReasons";
 
-const REASONS = ["Checkup", "Toothache", "Cleaning", "Braces", "Other"];
 const SAVED_KEY = "chairflow-patient";
 const FIELD_CLASS = "min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 text-base text-[#2E1747] outline-none transition placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]";
 
@@ -22,7 +22,7 @@ export default function JoinForm({
   const [guardian, setGuardian] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
+  const { names: REASONS, reasons: reasonList } = useVisitReasons(clinicId, "walk_in");
   // Remember this person's details on their own phone, so the next visit is one tap.
   useEffect(() => {
     const kickoff = window.setTimeout(() => {
@@ -85,33 +85,46 @@ export default function JoinForm({
 
         <div>
           <label htmlFor="queue-patient-name" className="mb-2 block text-sm font-semibold text-[#49365E]">
-            {isMinor ? "Child's full name" : "Full name"}
+            {isMinor ? "Child's full name" : "Full name"}{" "}
+            <span className="text-red-500" aria-hidden="true">*</span>
           </label>
           <input id="queue-patient-name" className={FIELD_CLASS} placeholder={isMinor ? "Enter the child's name" : "Enter your full name"}
             value={name} onChange={(e) => setName(e.target.value)} autoComplete={isMinor ? "off" : "name"} />
         </div>
         {isMinor && (
           <div>
-            <label htmlFor="queue-guardian-name" className="mb-2 block text-sm font-semibold text-[#49365E]">Parent or guardian&apos;s full name</label>
+            <label htmlFor="queue-guardian-name" className="mb-2 block text-sm font-semibold text-[#49365E]">
+              Parent or guardian&apos;s full name{" "}
+              <span className="text-red-500" aria-hidden="true">*</span>
+            </label>
             <input id="queue-guardian-name" className={FIELD_CLASS} placeholder="Enter parent or guardian's name"
               value={guardian} onChange={(e) => setGuardian(e.target.value)} />
           </div>
         )}
 
         <div>
-          <label htmlFor="queue-mobile" className="mb-2 block text-sm font-semibold text-[#49365E]">
-            {isMinor ? "Parent's mobile number" : "Mobile number"} <span className="font-normal text-[#82758E]">(optional)</span>
+          <label htmlFor="queue-mobile" className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-[#49365E]">
+            <span>{isMinor ? "Parent's mobile number" : "Mobile number"}</span>
+            <span className="text-xs font-normal text-[#82758E]">(optional)</span>
           </label>
           <input id="queue-mobile" className={FIELD_CLASS} placeholder="e.g. 0917 123 4567"
             inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
         </div>
 
         <div>
-          <label htmlFor="queue-reason" className="mb-2 block text-sm font-semibold text-[#49365E]">Reason for visit <span className="font-normal text-[#82758E]">(optional)</span></label>
+          <label htmlFor="queue-reason" className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-[#49365E]">
+            <span>Reason for visit</span>
+            <span className="text-xs font-normal text-[#82758E]">(optional)</span>
+          </label>
           <select id="queue-reason" className={FIELD_CLASS} value={reason} onChange={(e) => setReason(e.target.value)}>
             <option value="">Select a reason</option>
             {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
+          {reasonList.find((r) => r.name === reason)?.note && (
+            <p className="mt-2 rounded-xl bg-[#F2EAFF] p-3 text-sm text-[#5A2E8A]">
+              {reasonList.find((r) => r.name === reason)?.note}
+            </p>
+          )}
         </div>
 
         {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}

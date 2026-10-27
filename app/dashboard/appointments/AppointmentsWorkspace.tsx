@@ -9,6 +9,8 @@ import type { Settings } from "./BookingSettings";
 import { BackLink } from "./AppointmentNavigation";
 import { dayRangeManila, formatTime, todayManila } from "@/lib/today";
 import { getArrivalTiming } from "@/lib/queuePolicy";
+import { useVisitReasons } from "@/lib/useVisitReasons";
+
 
 type Status = "booked" | "confirmed" | "cancelled" | "arrived" | "completed" | "no_show";
 type Appt = {
@@ -19,7 +21,6 @@ type Appt = {
 };
 type Wait = { id: string; name: string; phone: string | null; reason: string | null; wanted_day: string | null };
 
-const REASONS = ["Checkup", "Toothache", "Cleaning", "Braces", "Other"];
 const FIELD_CLASS = "min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 text-base text-[#2E1747] outline-none transition placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]";
 const SMALL_BUTTON = "min-h-11 rounded-xl border border-[#D8C5EC] bg-white px-3 py-2 text-xs font-semibold text-[#5A2E8A] transition hover:bg-[#F8F3FF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCAF4]";
 
@@ -62,6 +63,7 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
   const [slot, setSlot] = useState("");
   const [fromWaitlist, setFromWaitlist] = useState("");
   const [pickerKey, setPickerKey] = useState(0);
+  const { names: REASONS } = useVisitReasons(clinicId, "staff");
 
   useEffect(() => {
     (async () => {
@@ -224,7 +226,7 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-5 text-[#2E1747] sm:px-6 sm:py-7 lg:px-8">
+    <div className="w-full px-4 py-5 text-[#2E1747] sm:px-6 sm:py-7 lg:px-8">
       {view !== "all" && <BackLink label="Back to Appointments" />}
       <header className={`${view === "all" ? "" : "mt-4 "}flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between`}>
         <div>
@@ -238,14 +240,6 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
             <span className="inline-flex w-fit rounded-full bg-[#F2EAFF] px-3 py-1.5 text-xs font-semibold text-[#6D3AA8]">
               {isToday ? "Today" : new Date(`${day}T00:00:00+08:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}
             </span>
-          )}
-          {view === "all" && (
-            <Link
-              href={`${rootPath}/settings`}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#D8C5EC] bg-white px-4 py-2 text-sm font-semibold text-[#6D3AA8] transition hover:bg-[#F8F3FF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCAF4]"
-            >
-              <span aria-hidden="true">⚙</span> Clinic settings <span aria-hidden="true">→</span>
-            </Link>
           )}
         </div>
       </header>

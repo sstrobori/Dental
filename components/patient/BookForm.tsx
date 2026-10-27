@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import SlotPicker from "@/components/SlotPicker";
 import { todayManila } from "@/lib/today";
+import { useVisitReasons } from "@/lib/useVisitReasons";
 
-const REASONS = ["Checkup", "Toothache", "Cleaning", "Braces", "Other"];
 const FIELD_CLASS = "min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 text-base text-[#2E1747] outline-none transition placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]";
 
 type Info = { name: string; accepting: boolean; deposit_amount: number; deposit_reasons: string[] };
@@ -17,19 +17,21 @@ export default function BookForm({
   clinicId: string;
   onDone: (appointmentId: string) => void;
 }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [info, setInfo] = useState<Info | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [slot, setSlot] = useState("");
   const [day, setDay] = useState(todayManila());
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [accountName, setAccountName] = useState("");
   const [reason, setReason] = useState("");
   const [isMinor, setIsMinor] = useState(false);
   const [guardian, setGuardian] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [waitlisted, setWaitlisted] = useState(false);
+  const { names: REASONS, reasons: reasonList } = useVisitReasons(clinicId, "online");
 
   useEffect(() => {
     (async () => {
@@ -38,6 +40,52 @@ export default function BookForm({
       setLoaded(true);
     })();
   }, [supabase, clinicId]);
+
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAccountDetails() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || cancelled) return;
+
+      const { data, error } = await supabase.rpc("my_account");
+
+      if (cancelled || error || !data) return;
+
+      const account = data as {
+        name?: string | null;
+        phone?: string | null;
+      };
+
+
+    const savedName = account.name?.trim() ?? "";
+
+    const savedPhone =
+      typeof user.user_metadata?.contact_phone === "string"
+        ? user.user_metadata.contact_phone.trim()
+        : account.phone?.trim() ?? "";
+
+    setAccountName(savedName);
+    setPhone((current) => current || savedPhone);
+
+    }
+
+    void loadAccountDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!isMinor && accountName) {
+      setName((current) => current || accountName);
+    }
+  }, [accountName, isMinor]);
 
   async function book(e: React.FormEvent) {
     e.preventDefault();
@@ -93,7 +141,9 @@ export default function BookForm({
 
       <form onSubmit={book} className="flex flex-col gap-5 rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-6">
         <fieldset>
-          <legend className="mb-3 text-sm font-semibold text-[#49365E]">Select a date and time</legend>
+          <legend className="mb-3 text-sm font-semibold text-[#49365E]">
+            Select a date and time <span className="text-red-500" aria-hidden="true">*</span>
+          </legend>
           <SlotPicker
             clinicId={clinicId} value={slot} onChange={setSlot} onDayChange={setDay}
             appearance="patient"
@@ -106,35 +156,50 @@ export default function BookForm({
         </fieldset>
 
         <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl bg-[#FAF8FF] px-4 py-3 text-sm font-medium text-[#49365E]">
-          <input className="size-5 shrink-0 accent-[#6D3AA8]" type="checkbox" checked={isMinor} onChange={(e) => setIsMinor(e.target.checked)} />
+          <input className="size-5 shrink-0 accent-[#6D3AA8]" type="checkbox" checked={isMinor} 
+            onChange={(e) => { const checked = e.target.checked; setIsMinor(checked); setName(checked ? "" : accountName);setGuardian(checked ? accountName : ""); }} />
           <span>This appointment is for a child under 18</span>
         </label>
 
         <div>
-          <label htmlFor="booking-patient-name" className="mb-2 block text-sm font-semibold text-[#49365E]">{isMinor ? "Child's full name" : "Full name"}</label>
+          <label htmlFor="booking-patient-name" className="mb-2 block text-sm font-semibold text-[#49365E]">
+            {isMinor ? "Child's full name" : "Full name"}{" "}
+            <span className="text-red-500" aria-hidden="true">*</span>
+          </label>
           <input id="booking-patient-name" className={FIELD_CLASS} placeholder={isMinor ? "Enter the child's name" : "Enter your full name"}
             value={name} onChange={(e) => setName(e.target.value)} autoComplete={isMinor ? "off" : "name"} />
         </div>
         {isMinor && (
           <div>
-            <label htmlFor="booking-guardian-name" className="mb-2 block text-sm font-semibold text-[#49365E]">Parent or guardian&apos;s full name</label>
+            <label htmlFor="booking-guardian-name" className="mb-2 block text-sm font-semibold text-[#49365E]">
+              Parent or guardian&apos;s full name <span className="text-red-500" aria-hidden="true">*</span>
+            </label>
             <input id="booking-guardian-name" className={FIELD_CLASS} placeholder="Enter parent or guardian's name"
               value={guardian} onChange={(e) => setGuardian(e.target.value)} />
           </div>
         )}
 
         <div>
-          <label htmlFor="booking-mobile" className="mb-2 block text-sm font-semibold text-[#49365E]">{isMinor ? "Parent's mobile number" : "Mobile number"}</label>
-          <input id="booking-mobile" className={FIELD_CLASS} placeholder="e.g. 0917 123 4567"
+<label htmlFor="booking-mobile" className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-[#49365E]">
+  <span>{isMinor ? "Parent's mobile number" : "Mobile number"}</span>
+  <span className="text-xs font-normal text-[#82758E]">(optional)</span>
+</label>          <input id="booking-mobile" className={FIELD_CLASS} placeholder="e.g. 0917 123 4567"
             inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
         </div>
 
         <div>
-          <label htmlFor="booking-reason" className="mb-2 block text-sm font-semibold text-[#49365E]">Reason for visit <span className="font-normal text-[#82758E]">(optional)</span></label>
-          <select id="booking-reason" className={FIELD_CLASS} value={reason} onChange={(e) => setReason(e.target.value)}>
+<label htmlFor="booking-reason" className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-[#49365E]">
+  <span>Reason for visit</span>
+  <span className="text-xs font-normal text-[#82758E]">(optional)</span>
+</label>          <select id="booking-reason" className={FIELD_CLASS} value={reason} onChange={(e) => setReason(e.target.value)}>
             <option value="">Select a reason</option>
             {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
+          {reasonList.find((r) => r.name === reason)?.note && (
+            <p className="mt-2 rounded-xl bg-[#F2EAFF] p-3 text-sm text-[#5A2E8A]">
+              {reasonList.find((r) => r.name === reason)?.note}
+            </p>
+          )}
         </div>
 
         {info.deposit_amount > 0 && (info.deposit_reasons.length === 0 || info.deposit_reasons.includes(reason)) && (

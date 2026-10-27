@@ -15,7 +15,7 @@ export function BackLink({ label = "Back", levels = 1 }: { label?: string; level
 }
 
 export function NavCard({ segment, title, description, icon }: {
-  segment: string; title: string; description: string; icon: "calendar" | "calendar-plus" | "settings" | "wallet" | "clock";
+  segment: string; title: string; description: string; icon: "calendar" | "calendar-plus" | "list-checks" | "wallet" | "clock";
 }) {
   const pathname = usePathname().replace(/\/$/, "");
   return (
@@ -24,7 +24,7 @@ export function NavCard({ segment, title, description, icon }: {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           {icon === "calendar" && <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M8 15h3"/></>}
           {icon === "calendar-plus" && <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M12 13v5M9.5 15.5h5"/></>}
-          {icon === "settings" && <><circle cx="12" cy="12" r="3"/><path d="M19 13.5a1.7 1.7 0 0 0 0-3l1-1.6-2-2-1.6 1a1.7 1.7 0 0 0-3-1L13 5h-2l-.4 1.9a1.7 1.7 0 0 0-3 1L6 7l-2 2 1 1.6a1.7 1.7 0 0 0 0 3L4 15l2 2 1.6-1a1.7 1.7 0 0 0 3 1L11 19h2l.4-2a1.7 1.7 0 0 0 3-1l1.6 1 2-2z"/></>}
+          {icon === "list-checks" && <><path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></>}
           {icon === "wallet" && <><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M15 14h3"/></>}
           {icon === "clock" && <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>}
         </svg>

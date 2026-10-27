@@ -14,7 +14,6 @@ export type Account = {
 
 // Sign in only. Patient accounts are created by the clinic, who sends a setup email.
 export default function AccountPanel({
-  clinicId,
   signedIn,
   account,
   onChange,
@@ -27,29 +26,18 @@ export default function AccountPanel({
   const supabase = createClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
-    setError(""); setMsg("");
+    setError("");
     if (!email.trim() || !password) return setError("Enter your email and password.");
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setBusy(false);
     if (error) return setError("Wrong email or password.");
     onChange();
-  }
-
-  async function forgot() {
-    setError(""); setMsg("");
-    if (!email.trim()) return setError("Enter your email first.");
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/welcome?clinic=${clinicId}`,
-    });
-    if (error) return setError(error.message);
-    setMsg("If this email has an account, we sent a link to choose a new password.");
   }
 
   async function signOut() {
@@ -101,10 +89,8 @@ export default function AccountPanel({
             onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </div>
         {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
-        {msg && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">{msg}</p>}
         <button disabled={busy} aria-busy={busy} className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 text-base font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg">{busy ? "Signing in…" : "Sign in"}</button>
       </form>
-      <button onClick={forgot} className="min-h-11 self-start rounded-xl px-2 text-sm font-semibold text-[#633795] underline decoration-[#CDBCE9] underline-offset-4 transition hover:text-[#4F267A] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E5D8F5]">Forgot password or first time here?</button>
     </div>
   );
 }

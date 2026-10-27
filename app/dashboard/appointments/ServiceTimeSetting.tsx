@@ -45,7 +45,7 @@ export default function ServiceTimeSetting({ clinicId, isOwner }: { clinicId: st
       {!isOwner && <p className="mb-4 rounded-xl bg-[#FAF8FF] p-3 text-sm text-[#6F647A]">Only the clinic owner can change this setting.</p>}
       <fieldset disabled={!isOwner || saving} className="flex flex-col gap-5 text-sm disabled:opacity-60">
         <p className="rounded-xl bg-[#FAF8FF] p-4 leading-6 text-[#6F647A]">
-          Until at least five visits have been timed from “Call” to “Mark served,” patient estimates use this typical duration. The live average takes over automatically afterward.
+          Until at least five visits have been timed from “Call” to “Mark served,” patient estimates use this typical duration. The live average takes over automatically afterward. During an active visit, estimates adjust from the time staff confirms “Patient arrived.”
         </p>
         <label className="flex max-w-xs flex-col gap-1.5 font-semibold text-[#49365E]">Typical visit length
           <span className="text-xs font-normal text-[#80748B]">Minutes per patient</span>

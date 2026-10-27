@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -177,7 +178,7 @@ export default function PatientsPage() {
   const picked = selected.map((id) => patients.find((p) => p.id === id)).filter(Boolean) as Patient[];
 
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
+    <div className="w-full p-4 sm:p-6 lg:p-8">
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8b5cb5]">Patient directory</p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Patients</h1>
@@ -237,9 +238,10 @@ export default function PatientsPage() {
                     {p.account_id && <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Portal account active</span>}
                   </span>
                 </label>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:max-w-md xl:justify-end">
-                  <button onClick={() => showHistory(p.id)} className="min-h-10 rounded-xl border border-[#d7c4ea] bg-white px-3 py-2 text-xs font-semibold text-[#5c327f]">History</button>
-                  {p.account_id ? (
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:max-w-md xl:justify-end">
+                      <button onClick={() => showHistory(p.id)} className="min-h-10 rounded-xl border border-[#d7c4ea] bg-white px-3 py-2 text-xs font-semibold text-[#5c327f]">History</button>
+                      <Link href={`/dashboard/history?patient=${p.id}`} className="min-h-10 rounded-xl border border-[#d7c4ea] bg-white px-3 py-2 text-center text-xs font-semibold text-[#5c327f]">Full history</Link>
+                      {p.account_id ? (
                     <>
                       <button onClick={() => accountAction(p, "resend")} className="min-h-10 rounded-xl border border-[#d7c4ea] bg-white px-3 py-2 text-xs font-semibold text-[#5c327f]">Resend email</button>
                       <button onClick={() => removeAccess(p)} className="min-h-10 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700">Remove access</button>

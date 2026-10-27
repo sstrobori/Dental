@@ -99,8 +99,11 @@ export default function ClinicControls({
         disabled={busy}
         aria-pressed={open}
         aria-busy={busy}
-        className="min-h-11 w-full shrink-0 rounded-xl border border-[#D7C4EA] bg-white px-4 py-2.5 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-      >
+        className={`min-h-11 w-full shrink-0 rounded-xl border px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto ${
+          open
+            ? "border-[#F1D1B5] bg-[#FFF3E6] text-[#9A4B15] hover:bg-[#FFE8D2] focus-visible:ring-orange-100"
+            : "border-[#BEDFC9] bg-[#E6F4EA] text-[#237347] hover:bg-[#D5EEDD] focus-visible:ring-green-100"
+        }`}      >
         {busy
           ? "Saving…"
           : open

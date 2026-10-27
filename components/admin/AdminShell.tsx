@@ -13,6 +13,8 @@ type IconName =
   | "patients"
   | "followups"
   | "reports"
+  | "history"
+  | "settings"
   | "team";
 
 const NAV: {
@@ -32,6 +34,11 @@ const NAV: {
     icon: "calendar",
   },
   {
+    href: "/dashboard/appointments/settings",
+    label: "Clinic settings",
+    icon: "settings",
+  },
+  {
     href: "/dashboard/calendar",
     label: "Calendar",
     icon: "servedCalendar",
@@ -40,6 +47,11 @@ const NAV: {
     href: "/dashboard/patients",
     label: "Patients",
     icon: "patients",
+  },
+  {
+    href: "/dashboard/history",
+    label: "History",
+    icon: "history",
   },
   {
     href: "/dashboard/followups",
@@ -122,6 +134,24 @@ function AdminIcon({
         <path d="M20 11a8 8 0 1 1-3-6.2" />
         <path d="M20 4v7h-7" />
         <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  }
+
+  if (name === "history") {
+    return (
+      <svg {...p}>
+        <rect x="5" y="3" width="14" height="18" rx="2" />
+        <path d="M9 8h6M9 12h6M9 16h3" />
+      </svg>
+    );
+  }
+
+  if (name === "settings") {
+    return (
+      <svg {...p}>
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.09a2 2 0 0 1 1 1.74v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        <circle cx="12" cy="12" r="3" />
       </svg>
     );
   }
@@ -223,10 +253,14 @@ export default function AdminShell({
     (item) => !item.ownerOnly || role === "owner"
   );
 
-  const active = (href: string) =>
-    href === "/dashboard"
-      ? pathname === href
-      : pathname.startsWith(href);
+  const active = (href: string) => {
+    if (href === "/dashboard") return pathname === href;
+    if (href === "/dashboard/appointments") {
+      return pathname.startsWith(href) &&
+        !pathname.startsWith("/dashboard/appointments/settings");
+    }
+    return pathname.startsWith(href);
+  };
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -252,7 +286,7 @@ export default function AdminShell({
           }
           ${
             active(item.href)
-              ? "bg-[#6d3aa8] text-white shadow-sm"
+              ? "bg-gradient-to-r from-[#F3E8FF] via-[#E9D5FF] to-[#DDD0FA] text-[#5B2E8A] shadow-sm"
               : mobile
                 ? "bg-[#faf8ff] text-[#675873]"
                 : "text-[#675873] hover:bg-[#f2eaff] hover:text-[#5b2e8a]"

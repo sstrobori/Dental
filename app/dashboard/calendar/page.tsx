@@ -16,15 +16,7 @@ type ServedEntry = {
 };
 
 const PH_TIMEZONE = "Asia/Manila";
-const WEEKDAYS = [
-  "Sun",
-  "Mon",
-  "Tue",
-  "Wed",
-  "Thu",
-  "Fri",
-  "Sat",
-];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function monthParts(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
@@ -39,16 +31,11 @@ function monthParts(month: string) {
 
   const followingMonth = new Date(
     Date.UTC(year, monthNumber, 1)
-  )
-    .toISOString()
-    .slice(0, 7);
+  ).toISOString().slice(0, 7);
 
   return {
-    year,
-    monthNumber,
     firstDayOffset,
     numberOfDays,
-    followingMonth,
     beginning: `${month}-01T00:00:00+08:00`,
     end: `${followingMonth}-01T00:00:00+08:00`,
   };
@@ -59,9 +46,7 @@ function shiftMonth(month: string, shift: number) {
 
   return new Date(
     Date.UTC(year, monthNumber - 1 + shift, 1)
-  )
-    .toISOString()
-    .slice(0, 7);
+  ).toISOString().slice(0, 7);
 }
 
 function manilaDateKey(timestamp: string) {
@@ -99,11 +84,23 @@ function servedTime(timestamp: string) {
   });
 }
 
+function completionTimestamp(entry: ServedEntry) {
+  return (
+    entry.served_at ??
+    entry.finished_at ??
+    entry.created_at
+  );
+}
+
 export default function ServedCalendarPage() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [clinicId, setClinicId] = useState<string | null>(null);
-  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [clinicId, setClinicId] = useState<string | null>(
+    null
+  );
+
+  const [checkingAccess, setCheckingAccess] =
+    useState(true);
 
   const [month, setMonth] = useState(
     () => todayManila().slice(0, 7)
@@ -113,13 +110,17 @@ export default function ServedCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
-
   const [selectedDay, setSelectedDay] = useState<string | null>(
     null
   );
 
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dateButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(
+    null
+  );
+
+  const dateButtonRef = useRef<HTMLButtonElement | null>(
+    null
+  );
 
   const calendar = useMemo(
     () => monthParts(month),
@@ -136,7 +137,8 @@ export default function ServedCalendarPage() {
     year: "numeric",
   });
 
-  // Get the clinic associated with the logged-in staff.
+  // IDENTIFY STAFF CLINIC
+
   useEffect(() => {
     let cancelled = false;
 
@@ -190,11 +192,8 @@ export default function ServedCalendarPage() {
     };
   }, [supabase]);
 
-  // Load served patients for the selected month.
-  // Priority:
-  // 1. served_at
-  // 2. finished_at
-  // 3. created_at (historical fallback)
+  // LOAD SERVED PATIENTS
+
   useEffect(() => {
     if (!clinicId) return;
 
@@ -204,7 +203,6 @@ export default function ServedCalendarPage() {
     async function loadMonth() {
       setLoading(true);
       setError("");
-      setRecords([]);
 
       const all: ServedEntry[] = [];
 
@@ -239,7 +237,8 @@ export default function ServedCalendarPage() {
             offset + batchSize - 1
           );
 
-        // Fallback if served_at column does not exist.
+        // Fallback if served_at doesn't exist.
+
         if (
           queryError &&
           /served_at/i.test(queryError.message)
@@ -279,7 +278,6 @@ export default function ServedCalendarPage() {
         if (cancelled) return;
 
         if (queryError) {
-          setRecords([]);
           setError(
             `Could not load served patients: ${queryError.message}`
           );
@@ -315,7 +313,8 @@ export default function ServedCalendarPage() {
     refreshKey,
   ]);
 
-  // Realtime changes and periodic backup refresh.
+  // REAL-TIME AND AUTOMATIC REFRESH
+
   useEffect(() => {
     if (!clinicId) return;
 
@@ -352,7 +351,8 @@ export default function ServedCalendarPage() {
     };
   }, [supabase, clinicId]);
 
-  // Handle Escape and focus when closing modal.
+  // CLOSE MODAL USING ESCAPE KEY
+
   useEffect(() => {
     if (!selectedDay) return;
 
@@ -360,8 +360,7 @@ export default function ServedCalendarPage() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setSelectedDay(null);
-        dateButtonRef.current?.focus();
+        closeModal();
       }
     };
 
@@ -372,35 +371,46 @@ export default function ServedCalendarPage() {
     };
   }, [selectedDay]);
 
-  // Group served records by Philippine calendar date.
+  // GROUP RECORDS BY DATE
+
   const byDate = useMemo(() => {
     const grouped = new Map<string, ServedEntry[]>();
 
     for (const entry of records) {
       const key = manilaDateKey(
-        entry.served_at ??
-          entry.finished_at ??
-          entry.created_at
+        completionTimestamp(entry)
       );
 
-      const dayRecords = grouped.get(key) ?? [];
+      const rows = grouped.get(key) ?? [];
 
-      dayRecords.push(entry);
-      grouped.set(key, dayRecords);
+      rows.push(entry);
+      grouped.set(key, rows);
+    }
+
+    for (const rows of grouped.values()) {
+      rows.sort(
+        (a, b) =>
+          new Date(completionTimestamp(a)).getTime() -
+          new Date(completionTimestamp(b)).getTime()
+      );
     }
 
     return grouped;
   }, [records]);
 
-  const selectedRecords = selectedDay
-    ? byDate.get(selectedDay) ?? []
-    : [];
+  const daysWithVisits = byDate.size;
 
   const estimatedDateCount = records.filter(
     (entry) =>
       !entry.served_at &&
       !entry.finished_at
   ).length;
+
+  const selectedRecords = selectedDay
+    ? byDate.get(selectedDay) ?? []
+    : [];
+
+  const selectedCount = selectedRecords.length;
 
   function openDate(
     day: string,
@@ -412,208 +422,191 @@ export default function ServedCalendarPage() {
 
   function closeModal() {
     setSelectedDay(null);
-    dateButtonRef.current?.focus();
+
+    window.requestAnimationFrame(() => {
+      dateButtonRef.current?.focus();
+    });
+  }
+
+  function changeMonth(direction: number) {
+    setSelectedDay(null);
+    setRecords([]);
+
+    setMonth((current) =>
+      shiftMonth(current, direction)
+    );
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-12 pt-6 text-[#2E1747] sm:px-6 sm:pt-8 lg:px-8">
+    <main className="w-full px-4 pb-12 pt-6 text-[#2E1747] sm:px-6 sm:pt-8 lg:px-8">
 
       {/* PAGE HEADER */}
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">
-            Patient visit records
-          </p>
+      <div className="mb-6">
 
+        <div>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
             Served patients calendar
           </h1>
-
-          <p className="mt-2 text-sm text-[#756581]">
-            Select a date to view the names, queue
-            numbers, and visit reasons of patients served.
-          </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() =>
-            setRefreshKey((value) => value + 1)
-          }
-          disabled={
-            loading ||
-            checkingAccess ||
-            !clinicId
-          }
-          className="min-h-10 rounded-xl border border-[#D7C4EA] bg-white px-4 py-2 text-sm font-semibold text-[#6D3AA8] hover:bg-[#F2EAFF] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Refresh records
-        </button>
       </div>
 
       {/* ERROR MESSAGE */}
 
       {error && (
-        <div
+        <p
           role="alert"
-          className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
+          className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
           {error}
-        </div>
-      )}
-
-      {/* HISTORICAL RECORD WARNING */}
-
-      {!loading && estimatedDateCount > 0 && (
-        <p
-          role="status"
-          className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
-        >
-          {estimatedDateCount.toLocaleString("en-PH")}{" "}
-          older served{" "}
-          {estimatedDateCount === 1
-            ? "record has"
-            : "records have"}{" "}
-          no completion timestamp. These are displayed
-          by the date the patient joined the queue,
-          which may differ from the actual service date.
         </p>
       )}
 
-      {/* CALENDAR CARD */}
+      {/* CALENDAR */}
 
-      <section className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm">
+      <section
+        aria-label="Served patients by month"
+        className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm"
+      >
 
         {/* MONTH HEADER */}
 
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E4D5F6] p-4 sm:p-6">
+        <div className="flex flex-col gap-4 border-b border-[#EDE5F5] p-4 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
 
-          <div>
-            <h2 className="text-xl font-bold">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8B5CB5]">
+              Monthly calendar
+            </p>
+
+            <h2 className="mt-1 text-xl font-bold sm:text-2xl">
               {monthTitle}
             </h2>
-
-            <p
-              className="mt-1 text-sm text-[#756581]"
-              aria-live="polite"
-            >
-              {loading || checkingAccess
-                ? "Loading served patient records…"
-                : `${records.length.toLocaleString("en-PH")} patient${records.length === 1 ? "" : "s"} served this month`}
-            </p>
           </div>
 
-          {/* MONTH NAVIGATION */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
 
-          <div className="flex items-center gap-2">
+            {/* MONTHLY TOTAL */}
 
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDay(null);
-                setMonth((value) =>
-                  shiftMonth(value, -1)
-                );
-              }}
-              aria-label="Previous month"
-              className="grid size-11 place-items-center rounded-xl border border-[#E4D5F6] text-[#6D3AA8] transition hover:bg-[#F2EAFF]"
+            <div className="mr-auto flex items-center gap-3 rounded-xl bg-[#F7F2FF] px-3 py-2.5 sm:px-4">
+
+              <span className="text-2xl font-extrabold tabular-nums text-[#6D3AA8]">
+                {loading || checkingAccess
+                  ? "—"
+                  : records.length.toLocaleString("en-PH")}
+              </span>
+
+              <span className="text-xs font-semibold leading-4 text-[#5C327F]">
+                Patients
+                <br />
+                served
+              </span>
+            </div>
+
+            {/* MONTH NAVIGATION */}
+
+            <div
+              className="flex items-center gap-1.5"
+              aria-label="Change calendar month"
             >
-              <svg
-                className="size-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
+
+              <button
+                type="button"
+                onClick={() => changeMonth(-1)}
+                aria-label="Previous month"
+                className="grid h-11 w-11 place-items-center rounded-xl border border-[#E4D5F6] bg-white text-[#6D3AA8] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6]"
               >
-                <path d="m15 18-6-6 6-6" />
-              </svg>
-            </button>
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDay(null);
-                setMonth(
-                  todayManila().slice(0, 7)
-                );
-              }}
-              className="min-h-11 rounded-xl border border-[#E4D5F6] px-3 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF]"
-            >
-              Today
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDay(null);
+                  setRecords([]);
 
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDay(null);
-                setMonth((value) =>
-                  shiftMonth(value, 1)
-                );
-              }}
-              aria-label="Next month"
-              className="grid size-11 place-items-center rounded-xl border border-[#E4D5F6] text-[#6D3AA8] transition hover:bg-[#F2EAFF]"
-            >
-              <svg
-                className="size-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
+                  setMonth(
+                    todayManila().slice(0, 7)
+                  );
+
+                  setRefreshKey(
+                    (value) => value + 1
+                  );
+                }}
+                className="min-h-11 rounded-xl border border-[#E4D5F6] bg-white px-3 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF]"
               >
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </button>
+                Today
+              </button>
 
+              <button
+                type="button"
+                onClick={() => changeMonth(1)}
+                aria-label="Next month"
+                className="grid h-11 w-11 place-items-center rounded-xl border border-[#E4D5F6] bg-white text-[#6D3AA8] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6]"
+              >
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
+
+            </div>
           </div>
         </div>
 
         {/* CALENDAR GRID */}
 
-        <div className="p-2 sm:p-5">
+        <div className="px-2 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-5">
 
           <div
             className="grid grid-cols-7 gap-1 sm:gap-2"
-            role="grid"
-            aria-label={`${monthTitle} served patient calendar`}
+            aria-label={`${monthTitle} calendar`}
           >
 
-            {/* WEEKDAY LABELS */}
+            {/* WEEKDAY HEADINGS */}
 
             {WEEKDAYS.map((day) => (
               <div
                 key={day}
-                role="columnheader"
                 className="py-2 text-center text-[11px] font-bold text-[#756581] sm:text-sm"
               >
                 {day}
               </div>
             ))}
 
-            {/* EMPTY CELLS BEFORE FIRST DAY */}
+            {/* EMPTY DAYS BEFORE MONTH */}
 
             {Array.from(
               {
-                length:
-                  calendar.firstDayOffset,
+                length: calendar.firstDayOffset,
               },
               (_, index) => (
                 <div
                   key={`blank-${index}`}
-                  role="gridcell"
                   aria-hidden="true"
                 />
               )
             )}
 
-            {/* CALENDAR DAYS */}
+            {/* CALENDAR DATES */}
 
             {Array.from(
               {
-                length:
-                  calendar.numberOfDays,
+                length: calendar.numberOfDays,
               },
               (_, index) => {
                 const dayNumber = index + 1;
@@ -625,94 +618,129 @@ export default function ServedCalendarPage() {
                 const servedCount =
                   byDate.get(dateKey)?.length ?? 0;
 
-                const isToday =
-                  dateKey === today;
-
+                const isToday = dateKey === today;
                 const isSelected =
                   dateKey === selectedDay;
 
+                const hasVisits = servedCount > 0;
+
                 return (
-                  <div
-                    role="gridcell"
+                  <button
                     key={dateKey}
+                    type="button"
+                    onClick={(event) =>
+                      openDate(
+                        dateKey,
+                        event.currentTarget
+                      )
+                    }
+                    aria-label={`${dayLabel(dateKey)}: ${servedCount} ${
+                      servedCount === 1
+                        ? "patient"
+                        : "patients"
+                    } served. View details.`}
+                    aria-pressed={isSelected}
+                    className={`flex min-h-[72px] min-w-0 flex-col items-start rounded-xl border p-1.5 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] sm:min-h-[108px] sm:p-3 ${                      isSelected
+                        ? "border-[#6D3AA8] bg-[#F0E6FF] ring-1 ring-[#6D3AA8]"
+                        : hasVisits
+                          ? "border-[#E4D5F6] bg-[#FCFAFF] hover:border-[#BA95E3] hover:bg-[#F7F0FF]"
+                          : "border-[#EEE8F4] bg-white hover:bg-[#FAF8FF]"
+                    }`}
                   >
-                    <button
-                      type="button"
-                      onClick={(event) =>
-                        openDate(
-                          dateKey,
-                          event.currentTarget
-                        )
-                      }
-                      aria-label={`${dayLabel(dateKey)}, ${servedCount} patient${servedCount === 1 ? "" : "s"} served`}
-                      aria-pressed={isSelected}
-                      className={`flex min-h-20 w-full flex-col items-center justify-start gap-1 rounded-xl border px-1 py-2 text-center transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] sm:min-h-28 sm:px-2 sm:py-3 ${
-                        isSelected
-                          ? "border-[#6D3AA8] bg-[#F0E6FF]"
-                          : servedCount > 0
-                            ? "border-[#D8C5EE] bg-[#F8F3FF] hover:bg-[#F1E7FF]"
-                            : "border-[#EFE8F7] bg-white hover:bg-[#FAF8FF]"
-                      }`}
-                    >
 
-                      {/* DAY NUMBER */}
 
-                      <span
-                        className={`grid size-7 place-items-center rounded-full text-sm font-bold sm:size-8 ${
-                          isToday
-                            ? "bg-[#6D3AA8] text-white"
-                            : "text-[#2E1747]"
-                        }`}
-                      >
-                        {dayNumber}
-                      </span>
+                  {/* DATE NUMBER - UPPER LEFT */}
 
-                      {/* SERVED COUNT */}
+                  <span
+                    className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold tabular-nums sm:h-8 sm:w-8 sm:text-sm ${
+                      isToday
+                        ? "bg-[#6D3AA8] text-white"
+                        : "text-[#49365E]"
+                    }`}
+                  >
+                    {dayNumber}
+                  </span>
 
-                      <span
-                        className={`text-[10px] font-semibold leading-4 sm:text-xs ${
-                          servedCount > 0
-                            ? "text-[#6D3AA8]"
-                            : "text-[#988AA5]"
-                        }`}
-                      >
-                        {servedCount} served
-                      </span>
+                  {/* SERVED COUNT - ONLY WHEN THERE ARE PATIENTS */}
 
-                    </button>
-                  </div>
+                  {/* SERVED COUNT - CENTERED */}
+
+                  {servedCount > 0 && (
+                    <span className="mt-auto block w-full pb-1 text-center text-[11px] font-semibold leading-4 text-[#6D3AA8] sm:text-sm">
+                      {servedCount} served
+                    </span>
+                  )}
+
+                  </button>
                 );
               }
             )}
+
           </div>
         </div>
 
-        {/* CALENDAR EXPLANATION */}
+        {/* LEGEND */}
 
-        <p className="border-t border-[#F0EAF7] px-4 py-3 text-xs leading-5 text-[#80748B] sm:px-6">
-          Records with a completion timestamp are grouped
-          by the date they were served (Philippine time).
-          Older served records without a completion
-          timestamp are displayed under their queue-entry
-          date as an approximation.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-[#EDE5F5] bg-[#FCFAFF] px-4 py-3 text-xs text-[#756581] sm:px-6">
 
+          <div className="flex items-center gap-2">
+            <span
+              className="h-3 w-3 rounded-full bg-[#6D3AA8]"
+              aria-hidden="true"
+            />
+
+          <span>
+            Dates with completed visits show the number of patients served.
+          </span>
+          </div>
+
+          {!loading &&
+            !checkingAccess &&
+            !error && (
+              <span>
+                {daysWithVisits}{" "}
+                {daysWithVisits === 1
+                  ? "day"
+                  : "days"}{" "}
+                with completed visits
+              </span>
+            )}
+
+        </div>
       </section>
 
-      {/* SELECTED DATE MODAL */}
+      {/* OLDER RECORD NOTICE */}
+
+      {!loading && estimatedDateCount > 0 && (
+        <p
+          role="note"
+          className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"
+        >
+          {estimatedDateCount} older{" "}
+          {estimatedDateCount === 1
+            ? "visit has"
+            : "visits have"}{" "}
+          no recorded completion time. Those visits
+          appear on their queue-entry dates, which
+          may not be the actual dates served.
+        </p>
+      )}
+
+      {/* DATE DETAILS MODAL */}
 
       {selectedDay && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-[#241334]/60 p-3 backdrop-blur-[2px] sm:p-6"
           onMouseDown={(event) => {
             if (
-              event.currentTarget ===
-              event.target
+              event.target ===
+              event.currentTarget
             ) {
               closeModal();
             }
           }}
         >
+
           <section
             role="dialog"
             aria-modal="true"
@@ -722,75 +750,82 @@ export default function ServedCalendarPage() {
 
             {/* MODAL HEADER */}
 
-            <div className="flex items-start justify-between gap-4 border-b border-[#E4D5F6] p-4 sm:p-6">
+            <header className="flex items-start justify-between gap-3 border-b border-[#EDE5F5] p-4 sm:p-6">
 
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">
-                  Served patient records
+              <div className="min-w-0">
+
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8B5CB5]">
+                  Daily visit summary
                 </p>
 
                 <h2
                   id="served-day-title"
-                  className="mt-1 text-lg font-bold sm:text-xl"
+                  className="mt-1 text-lg font-extrabold sm:text-xl"
                 >
                   {dayLabel(selectedDay)}
                 </h2>
 
-                <p className="mt-1 text-sm text-[#756581]">
-                  {selectedRecords.length}{" "}
-                  patient
-                  {selectedRecords.length === 1
-                    ? ""
-                    : "s"}{" "}
+                <span className="mt-3 inline-flex rounded-full bg-[#F2EAFF] px-3 py-1.5 text-xs font-bold text-[#6D3AA8]">
+                  {selectedCount}{" "}
+                  {selectedCount === 1
+                    ? "patient"
+                    : "patients"}{" "}
                   served
-                </p>
+                </span>
+
               </div>
+
+              {/* CLOSE MODAL */}
 
               <button
                 ref={closeButtonRef}
                 type="button"
                 onClick={closeModal}
-                aria-label="Close patient details"
-                className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#E4D5F6] text-[#6D3AA8] transition hover:bg-[#F2EAFF]"
+                aria-label="Close visit details"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#E4D5F6] text-[#6D3AA8] hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6]"
               >
                 <svg
+                  className="h-5 w-5"
                   viewBox="0 0 24 24"
-                  className="size-5"
+                  fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
-                  fill="none"
                   aria-hidden="true"
                 >
                   <path d="M6 6l12 12M18 6 6 18" />
                 </svg>
               </button>
 
-            </div>
+            </header>
 
             {/* PATIENT LIST */}
 
             <div className="overflow-y-auto p-4 sm:p-6">
 
-              {selectedRecords.length === 0 ? (
+              {selectedCount === 0 ? (
                 <p className="rounded-xl bg-[#FAF8FF] p-5 text-center text-sm text-[#756581]">
-                  No served patients are recorded
-                  for this date.
+                  No served patients recorded
+                  for this day.
                 </p>
               ) : (
-                <ul className="flex flex-col gap-3">
+                <ul className="space-y-3">
 
-                  {selectedRecords.map(
-                    (patient) => (
+                  {selectedRecords.map((patient) => {
+                    const time =
+                      patient.served_at ??
+                      patient.finished_at;
+
+                    return (
                       <li
                         key={patient.id}
-                        className="flex items-start gap-3 rounded-xl border border-[#E4D5F6] bg-[#FCFAFF] p-4"
+                        className="flex items-start gap-3 rounded-xl border border-[#E4D5F6] bg-white p-4"
                       >
 
                         {/* QUEUE NUMBER */}
 
-                        <span className="shrink-0 rounded-lg bg-[#F2EAFF] px-3 py-2 text-sm font-extrabold text-[#6D3AA8]">
+                        <div className="min-w-[3rem] rounded-lg bg-[#F2EAFF] px-2 py-2 text-center text-sm font-extrabold tabular-nums text-[#6D3AA8]">
                           #{patient.queue_number}
-                        </span>
+                        </div>
 
                         {/* PATIENT DETAILS */}
 
@@ -801,26 +836,21 @@ export default function ServedCalendarPage() {
                           </p>
 
                           <p className="mt-1 break-words text-sm text-[#756581]">
-                            Reason:{" "}
                             {patient.visit_reason ||
-                              "Not specified"}
+                              "Reason not specified"}
                           </p>
 
-                          <p className="mt-1 text-xs text-[#8B5CB5]">
-                            {patient.served_at ||
-                            patient.finished_at
-                              ? `Served at ${servedTime(
-                                  patient.served_at ??
-                                    patient.finished_at!
-                                )}`
-                              : "Service time not recorded (date estimated)"}
+                          <p className="mt-2 text-xs font-semibold text-[#6D3AA8]">
+                            {time
+                              ? `Served at ${servedTime(time)}`
+                              : "Completion time not recorded · date estimated"}
                           </p>
 
                         </div>
 
                       </li>
-                    )
-                  )}
+                    );
+                  })}
 
                 </ul>
               )}

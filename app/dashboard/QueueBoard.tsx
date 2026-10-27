@@ -1,14 +1,12 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { createClient } from "@/lib/supabase/client";
 import { formatTime, startOfTodayManila } from "@/lib/today";
 import { getArrivalTiming } from "@/lib/queuePolicy";
 import ClinicControls from "./ClinicControls";
-
+import { useVisitReasons } from "@/lib/useVisitReasons";
 type Status = "waiting" | "called" | "served" | "skipped" | "no_show" | "cancelled";
-
 export type Entry = {
   id: string;
   queue_number: number;
@@ -19,6 +17,7 @@ export type Entry = {
   created_at: string;
   queued_at: string;
   called_at: string | null;
+  service_started_at?: string | null;
   returning_visit: boolean;
   prev_visit_at: string | null;
   is_minor: boolean;
@@ -26,37 +25,87 @@ export type Entry = {
   appointment_id: string | null;
   appointment_starts_at?: string | null;
 };
-
+type ConfirmAction = "call" | "arrived" | "served" | "no_show" | "skip" | "move_next" | "move_end";
+type ConfirmTarget = {
+  kind: ConfirmAction;
+  entryId: string;
+  queueNumber: number;
+  patientName: string;
+  isAppointment: boolean;
+};
+function confirmationCopy(target: ConfirmTarget) {
+  const patient = `Queue #${target.queueNumber} (${target.patientName})`;
+  switch (target.kind) {
+    case "call":
+      return {
+        title: "Call this patient?",
+        message: `${patient} will be called and moved to Now serving. The patient's queue display will show that it is their turn.`,
+        confirmLabel: "Yes, call patient",
+        tone: "blue" as const,
+      };
+    case "arrived":
+      return {
+        title: "Confirm patient arrival?",
+        message: `Confirm that ${patient} has arrived at the counter. You can mark the visit as served afterward.`,
+        confirmLabel: "Confirm arrival",
+        tone: "teal" as const,
+      };
+    case "served":
+      return {
+        title: "Mark this patient as served?",
+        message: `${patient} will be marked as served and removed from Now serving. Please confirm that the visit is complete.`,
+        confirmLabel: "Mark served",
+        tone: "green" as const,
+      };
+    case "no_show":
+      return {
+        title: "Mark this patient as a no-show?",
+        message: `${patient} will be removed from Now serving and recorded as a no-show.`,
+        confirmLabel: "Mark no-show",
+        tone: "red" as const,
+      };
+    case "skip":
+      return {
+        title: target.isAppointment ? "Put this appointment on hold?" : "Skip this patient?",
+        message: `${patient} will be removed from the active waiting order and placed in On hold or skipped.`,
+        confirmLabel: target.isAppointment ? "Yes, hold" : "Yes, skip",
+        tone: "amber" as const,
+      };
+    case "move_next":
+      return {
+        title: "Put this patient next?",
+        message: `${patient} will be returned to the waiting queue in the next position, changing the order for other patients.`,
+        confirmLabel: "Put next",
+        tone: "purple" as const,
+      };
+    case "move_end":
+      return {
+        title: "Move this patient to the back?",
+        message: `${patient} will be placed at the end of the waiting queue and may have a longer wait.`,
+        confirmLabel: "Move to back",
+        tone: "purple" as const,
+      };
+  }
+}
 type SyncState = "connecting" | "live" | "fallback" | "offline";
-
-const REASONS = ["Checkup", "Toothache", "Cleaning", "Braces", "Other"];
-
-
 const PH_MOBILE_PATTERN = /^(?:09\d{9}|\+639\d{9})$/;
-
 function normalizeMobileInput(value: string): string {
   // Remove spaces, hyphens, and other formatting characters.
   const cleaned = value.replace(/[^\d+]/g, "");
-
   // Keep only a single leading plus sign.
   const normalized = cleaned.startsWith("+")
     ? "+" + cleaned.slice(1).replace(/\+/g, "")
     : cleaned.replace(/\+/g, "");
-
   // Local: 11 digits.
   // International: +63 plus 10 digits (13 characters total).
   const maxLength = normalized.startsWith("+") ? 13 : 11;
-
   return normalized.slice(0, maxLength);
 }
-
-
 // Patients type their own names, so anything written into a printed page must be escaped.
 function escapeHtml(s: string) {
   const map: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   return s.replace(/[&<>"']/g, (c) => map[c]);
 }
-
 export default function QueueBoard({
   clinicId,
   clinicName,
@@ -85,12 +134,17 @@ export default function QueueBoard({
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [pendingId, setPendingId] = useState("");
   const [adding, setAdding] = useState(false);
-
+  const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const dialogId = useId();
+  const confirmTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
+  const confirmDialogRef = useRef<HTMLDivElement | null>(null);
+  const { names: REASONS } = useVisitReasons(clinicId, "staff");
   useEffect(() => {
     const kickoff = window.setTimeout(() => setOrigin(window.location.origin), 0);
     return () => window.clearTimeout(kickoff);
   }, []);
-
   const refresh = useCallback(async () => {
     const { data, error: refreshError } = await supabase
       .from("queue_entries")
@@ -102,11 +156,9 @@ export default function QueueBoard({
       setSyncState(navigator.onLine ? "fallback" : "offline");
       return;
     }
-
     const rows = (data ?? []) as Entry[];
     const appointmentIds = [...new Set(rows.flatMap((row) => row.appointment_id ? [row.appointment_id] : []))];
     const appointmentTimes = new Map<string, string>();
-
     if (appointmentIds.length > 0) {
       const { data: appointments } = await supabase
         .from("appointments")
@@ -116,13 +168,11 @@ export default function QueueBoard({
         appointmentTimes.set(appointment.id as string, appointment.starts_at as string);
       }
     }
-
     const { data: clinic } = await supabase
       .from("clinics")
       .select("grace_minutes")
       .eq("id", clinicId)
       .maybeSingle();
-
     setEntries(rows.map((row) => ({
       ...row,
       appointment_starts_at: row.appointment_id ? appointmentTimes.get(row.appointment_id) ?? null : null,
@@ -130,7 +180,6 @@ export default function QueueBoard({
     if (clinic?.grace_minutes !== undefined) setGraceMinutes(clinic.grace_minutes as number);
     setLastSyncedAt(new Date());
   }, [supabase, clinicId]);
-
   useEffect(() => {
     const kickoff = window.setTimeout(() => void refresh(), 0);
     const channel = supabase
@@ -146,7 +195,6 @@ export default function QueueBoard({
           setSyncState(navigator.onLine ? "fallback" : "offline");
         }
       });
-
     const timer = window.setInterval(refresh, 5000);
     const onOnline = () => { setSyncState("connecting"); refresh(); };
     const onOffline = () => setSyncState("offline");
@@ -154,7 +202,6 @@ export default function QueueBoard({
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     document.addEventListener("visibilitychange", onVisibility);
-
     return () => {
       window.clearTimeout(kickoff);
       window.clearInterval(timer);
@@ -164,7 +211,88 @@ export default function QueueBoard({
       supabase.removeChannel(channel);
     };
   }, [supabase, clinicId, refresh]);
-
+  function requestConfirmation(kind: ConfirmAction, entry: Entry, trigger: HTMLButtonElement) {
+    if (pendingId || confirmBusy || syncState === "offline") return;
+    confirmTriggerRef.current = trigger;
+    setConfirmTarget({
+      kind,
+      entryId: entry.id,
+      queueNumber: entry.queue_number,
+      patientName: entry.name,
+      isAppointment: Boolean(entry.appointment_id),
+    });
+  }
+  function closeConfirmation() {
+    if (confirmBusy) return;
+    setConfirmTarget(null);
+    window.requestAnimationFrame(() => confirmTriggerRef.current?.focus());
+  }
+  useEffect(() => {
+    if (!confirmTarget) return;
+    confirmCancelRef.current?.focus();
+    const handleKeys = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !confirmBusy) {
+        event.preventDefault();
+        setConfirmTarget(null);
+        window.requestAnimationFrame(() => confirmTriggerRef.current?.focus());
+      }
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(
+        confirmDialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []
+      );
+      if (!buttons.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeys);
+    return () => document.removeEventListener("keydown", handleKeys);
+  }, [confirmTarget, confirmBusy]);
+  async function confirmAction() {
+    const target = confirmTarget;
+    if (!target || confirmBusy || pendingId) return;
+    setConfirmBusy(true);
+    try {
+      switch (target.kind) {
+        case "call":
+          await setStatus(target.entryId, "called");
+          break;
+        case "arrived":
+          await startService(target.entryId);
+          break;
+        case "served":
+          await setStatus(target.entryId, "served");
+          break;
+        case "no_show":
+          await setStatus(target.entryId, "no_show");
+          break;
+        case "skip":
+          await setStatus(target.entryId, "skipped");
+          break;
+        case "move_next":
+          await reinsert(target.entryId, "next");
+          break;
+        case "move_end":
+          await reinsert(target.entryId, "end");
+          break;
+      }
+    } catch {
+      setError("The queue could not be updated. Please try again.");
+    } finally {
+      setConfirmBusy(false);
+      setConfirmTarget(null);
+      window.requestAnimationFrame(() => confirmTriggerRef.current?.focus());
+    }
+  }
   async function setStatus(id: string, status: Status) {
     if (!navigator.onLine) {
       setSyncState("offline");
@@ -174,17 +302,22 @@ export default function QueueBoard({
     setError("");
     setNotice("");
     setPendingId(id);
+    // Do not complete a patient before their visit actually begins.
+    if (status === "served" && !entries.some((entry) => entry.id === id && entry.service_started_at)) {
+      setPendingId("");
+      setError("Confirm that the patient has arrived before marking them served.");
+      return;
+    }
     const now = new Date().toISOString();
-    const patch: Record<string, string> = { status };
-
+    const patch: Record<string, string | null> = { status };
     if (status === "called") {
       patch.called_at = now;
+      // A re-called patient must begin service again.
+      patch.service_started_at = null;
     }
-
     if (status === "waiting") {
       patch.queued_at = now;
     }
-
     if (status === "served") {
       patch.finished_at = now;
       patch.served_at = now;
@@ -198,7 +331,37 @@ export default function QueueBoard({
     }
     await refresh();
   }
-
+  async function startService(id: string) {
+    if (!navigator.onLine) {
+      setSyncState("offline");
+      setError("No internet connection. Patient arrival could not be confirmed.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    setPendingId(id);
+    // Keep the existing 'called' status for the patient portal and TV display.
+    // This timestamp distinguishes 'called' from 'being attended to'.
+    const { data, error: startError } = await supabase
+      .from("queue_entries")
+      .update({ service_started_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("clinic_id", clinicId)
+      .eq("status", "called")
+      .is("service_started_at", null)
+      .select("id");
+    setPendingId("");
+    if (startError) {
+      setError(`Could not confirm patient arrival: ${startError.message}. Ensure the service_started_at migration was applied.`);
+      return;
+    }
+    if (!data?.length) {
+      setError("Could not confirm patient arrival because this queue entry has already changed. Refresh and try again.");
+      await refresh();
+      return;
+    }
+    await refresh();
+  }
   async function reinsert(id: string, placement: "next" | "end") {
     if (!navigator.onLine) {
       setSyncState("offline");
@@ -224,7 +387,6 @@ export default function QueueBoard({
     setNotice(placement === "next" ? "Patient is next in line." : "Patient was placed at the back of the line.");
     await refresh();
   }
-
   async function addWalkIn(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -237,17 +399,14 @@ export default function QueueBoard({
     if (!name.trim()) {
       return setError("Enter the patient's name.");
     }
-
     if (phone !== "" && phone !== "09" && !PH_MOBILE_PATTERN.test(phone)) {
       return setError(
         "Enter a valid Philippine mobile number: 09171234567 or +639171234567."
       );
     }
-
     if (isMinor && !guardian.trim()) {
       return setError("Enter the parent or guardian's name.");
     }
-
     setAdding(true);
     const { data, error } = await supabase
       .from("queue_entries")
@@ -267,7 +426,6 @@ export default function QueueBoard({
     setName(""); setPhone("09"); setReason(""); setIsMinor(false); setGuardian("");
     refresh();
   }
-
   function printPoster() {
     const svg = document.getElementById("qr-wrap")?.innerHTML ?? "";
     const w = window.open("", "_blank", "width=600,height=800");
@@ -284,7 +442,6 @@ export default function QueueBoard({
     w.focus();
     w.print();
   }
-
   function patientNote(e: Entry): string {
     const parts: string[] = [];
     if (e.returning_visit) {
@@ -296,12 +453,10 @@ export default function QueueBoard({
     if (e.is_minor) parts.push(`Child, guardian: ${e.guardian_name ?? "not given"}`);
     return parts.join(" · ");
   }
-
   function appointmentTiming(e: Entry) {
     if (!e.appointment_starts_at) return null;
     return getArrivalTiming(e.appointment_starts_at, e.created_at, graceMinutes);
   }
-
   function appointmentTimingLabel(e: Entry): string {
     if (!e.appointment_starts_at) return "";
     const timing = appointmentTiming(e);
@@ -313,7 +468,6 @@ export default function QueueBoard({
     }
     return `Scheduled ${scheduled} · ${timing.minutesAfterStart} min late · ${timing.minutesPastGrace} min past grace`;
   }
-
   const called = entries.filter((e) => e.status === "called");
   const waiting = entries.filter((e) => e.status === "waiting");
   const skipped = entries.filter((e) => e.status === "skipped");
@@ -321,72 +475,64 @@ export default function QueueBoard({
   const noShow = entries.filter((e) => e.status === "no_show").length;
   const left = entries.filter((e) => e.status === "cancelled").length;
   const next = waiting[0];
-
   const waits = entries.flatMap((e) =>
     e.called_at ? [(new Date(e.called_at).getTime() - new Date(e.created_at).getTime()) / 60000] : []
   );
   const avgWait = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
-
   const joinUrl = `${origin}/c/${clinicId}`;
   const displayUrl = `${origin}/display/${clinicId}`;
-
   return (
-    <div className="mt-6 flex flex-col gap-5 text-[#2E1747] sm:mt-8 sm:gap-6">
-
-
+    <div className="mx-4 mt-6 flex flex-col gap-5 text-[#2E1747] sm:mx-6 sm:mt-8 sm:gap-6 lg:mx-8">
     {/* Live Queue and Online Queue Joining */}
-
     <header className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm">
-
       {/* Live Queue Header */}
-
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:p-6">
-
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-[#2E1747] sm:text-3xl">
             Live queue
           </h1>
-
           <p className="mt-1 text-sm text-[#756581]">
             Call patients, manage late arrivals, and keep the front desk moving.
           </p>
         </div>
-
         <button
           type="button"
-          onClick={() =>
-            next && setStatus(next.id, "called")
-          }
+          onClick={(event) => next && requestConfirmation("call", next, event.currentTarget)}
           disabled={
             !next ||
             !!pendingId ||
             syncState === "offline"
           }
-          className="min-h-12 w-full shrink-0 rounded-xl bg-[#6D3AA8] px-6 py-3 font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-        >
+className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEAFE] px-6 py-3 font-bold text-[#1D4ED8] shadow-sm transition hover:bg-[#BFDBFE] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"        >
           {pendingId === next?.id
             ? "Calling…"
             : next
               ? `Call next · #${next.queue_number}`
               : "Queue is empty"}
         </button>
-
       </div>
-
       {/* Online Queue Joining - Integrated */}
-
       <ClinicControls
         clinicId={clinicId}
         acceptingJoins={acceptingJoins}
       />
-
     </header>
-
-
-
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{notice}</p>}
-
+      <section aria-label="Today at a glance" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {[
+          ["Waiting", waiting.length],
+          ["Served", served],
+          ["No-show", noShow],
+          ["Left queue", left],
+          ["Average wait", avgWait === null ? "—" : `${avgWait} min`],
+        ].map(([label, value]) => (
+          <div key={label as string} className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-[#756581]">{label}</p>
+            <p className="mt-1 text-2xl font-extrabold tracking-tight text-[#2E1747]">{value}</p>
+          </div>
+        ))}
+      </section>
       <div className="grid gap-5 xl:grid-cols-12 xl:items-start">
         <section aria-labelledby="serving-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-4">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -394,12 +540,14 @@ export default function QueueBoard({
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8151AE]">At the counter</p>
               <h2 id="serving-heading" className="mt-1 text-lg font-bold">Now serving</h2>
             </div>
-            <span className="rounded-full bg-[#F2EAFF] px-3 py-1 text-xs font-semibold text-[#6D3AA8]">{called.length} active</span>
+          <span className="rounded-full border border-[#BCE5CA] bg-[#E8F6ED] px-3 py-1 text-xs font-semibold text-[#247344]">
+            {called.length} active
+          </span>
           </div>
           {called.length === 0 && <p className="rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#756581]">No patient has been called yet.</p>}
           <ul className="flex flex-col gap-3">
             {called.map((e) => (
-              <li key={e.id} className="rounded-2xl border border-[#CDB8E5] bg-gradient-to-br from-[#F7F1FF] to-white p-4">
+                  <li key={e.id} className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-4xl font-extrabold tracking-tight text-[#6D3AA8]">#{e.queue_number}</p>
@@ -407,44 +555,73 @@ export default function QueueBoard({
                     <p className="mt-1 text-sm text-[#756581]">{e.visit_reason ?? "No reason given"}</p>
                     {patientNote(e) && <p className="mt-1 text-xs font-medium text-[#6D3AA8]">{patientNote(e)}</p>}
                   </div>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#6D3AA8] shadow-sm">Called</span>
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      e.service_started_at
+                        ? "border-[#BCE5CA] bg-[#E8F6ED] text-[#247344]"
+                        : "border-[#E5E7EB] bg-[#F8FAFC] text-[#475569]"
+                    }`}
+                  >
+                    {e.service_started_at ? "Arrived" : "Called"}
+                  </span>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={!!pendingId || syncState === "offline"}
-                    onClick={() => setStatus(e.id, "served")}
-                    className="min-h-11 rounded-xl bg-[#6D3AA8] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#572C87] disabled:opacity-45"
-                  >
-                    Mark served
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!pendingId || syncState === "offline"}
-                    onClick={() => setStatus(e.id, "no_show")}
-                    className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] disabled:opacity-45"
-                  >
-                    No-show
-                  </button>
+                {e.service_started_at && (
+                  <p className="mt-3 text-xs font-medium text-[#247344]">
+                    Arrived at {formatTime(e.service_started_at)}
+                  </p>
+                )}
+                <div className={`mt-4 grid gap-2 ${e.service_started_at ? "grid-cols-1" : "grid-cols-2"}`}>
+                  {e.service_started_at ? (
+                    <button
+                      type="button"
+                      disabled={!!pendingId || syncState === "offline"}
+                      onClick={(event) => requestConfirmation("served", e, event.currentTarget)}
+                      className="min-h-11 rounded-xl bg-[#32965F] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#287F50] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100 disabled:opacity-45"
+                    >
+                      {pendingId === e.id ? "Saving…" : "Mark served"}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!!pendingId || syncState === "offline"}
+                        onClick={(event) => requestConfirmation("arrived", e, event.currentTarget)}
+                        className="min-h-11 rounded-xl border border-[#5EEAD4] bg-[#CCFBF1] px-3 py-2 text-sm font-bold text-[#0F766E] transition hover:bg-[#99F6E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#CCFBF1] disabled:opacity-45"                      >
+                        {pendingId === e.id ? "Confirming…" : "Patient arrived"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!pendingId || syncState === "offline"}
+                        onClick={(event) => requestConfirmation("no_show", e, event.currentTarget)}
+                        className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] disabled:opacity-45"
+                      >
+                        No-show
+                      </button>
+                    </>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
         </section>
-
         <section aria-labelledby="waiting-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8151AE]">Next patients</p>
               <h2 id="waiting-heading" className="mt-1 text-lg font-bold">Waiting queue</h2>
             </div>
-            <span className="rounded-full bg-[#F2EAFF] px-3 py-1 text-xs font-semibold text-[#6D3AA8]">{waiting.length} waiting</span>
+          <span className="rounded-full border border-[#F2DB9C] bg-[#FFF4D9] px-3 py-1 text-xs font-semibold text-[#925900]">
+            {waiting.length} waiting
+          </span>
           </div>
           {waiting.length === 0 && <p className="rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#756581]">The queue is empty.</p>}
           <ul className="flex flex-col gap-3">
             {waiting.map((e, index) => (
-              <li key={e.id} className="rounded-xl border border-[#E4D5F6] bg-[#FCFAFF] p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <li
+                    key={e.id}
+                    className="rounded-xl border border-[#E5E7EB] bg-white p-4 transition hover:border-[#D7C4EA] hover:shadow-sm"
+                  >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="break-words font-bold"><span className="mr-2 text-lg text-[#6D3AA8]">#{e.queue_number}</span>{e.name}</p>
                     <p className="mt-1 text-xs text-[#756581]">{e.visit_reason ?? "No reason"}{e.phone ? "" : " · no phone"}</p>
@@ -459,16 +636,15 @@ export default function QueueBoard({
                     <button
                       type="button"
                       disabled={!!pendingId || syncState === "offline"}
-                      onClick={() => setStatus(e.id, "called")}
-                      className="min-h-11 rounded-xl bg-[#6D3AA8] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#572C87] disabled:opacity-45"
-                    >
+                      onClick={(event) => requestConfirmation("call", e, event.currentTarget)}
+                      className="min-h-11 rounded-xl border border-[#93C5FD] bg-[#DBEAFE] px-4 py-2 text-sm font-bold text-[#1D4ED8] transition hover:bg-[#BFDBFE] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DBEAFE] disabled:opacity-45" >
                       Call
                     </button>
                     {appointmentTiming(e)?.window === "late" && index < waiting.length - 1 && (
                       <button
                         type="button"
                         disabled={!!pendingId || syncState === "offline"}
-                        onClick={() => reinsert(e.id, "end")}
+                        onClick={(event) => requestConfirmation("move_end", e, event.currentTarget)}
                         className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45"
                       >
                         Move to back
@@ -477,7 +653,7 @@ export default function QueueBoard({
                     <button
                       type="button"
                       disabled={!!pendingId || syncState === "offline"}
-                      onClick={() => setStatus(e.id, "skipped")}
+                      onClick={(event) => requestConfirmation("skip", e, event.currentTarget)}
                       className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] disabled:opacity-45"
                     >
                       {e.appointment_id ? "Hold" : "Skip"}
@@ -492,16 +668,16 @@ export default function QueueBoard({
               <h3 className="mb-3 text-sm font-bold text-[#5C327F]">On hold or skipped</h3>
               <ul className="flex flex-col gap-2">
                 {skipped.map((e) => (
-                  <li key={e.id} className="flex flex-col gap-3 rounded-xl bg-[#F7F1FF] p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <li key={e.id} className="flex flex-col gap-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                     <span className="min-w-0 break-words font-semibold">
                       <span className="text-[#6D3AA8]">#{e.queue_number}</span> {e.name}
                       {e.appointment_starts_at && <span className="mt-1 block text-xs font-normal text-[#756581]">{appointmentTimingLabel(e)}</span>}
                     </span>
                     <span className="grid shrink-0 grid-cols-2 gap-2">
                       {e.appointment_id && (
-                        <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={() => reinsert(e.id, "next")} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Put next</button>
+                        <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={(event) => requestConfirmation("move_next", e, event.currentTarget)} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Put next</button>
                       )}
-                      <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={() => reinsert(e.id, "end")} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Back to end</button>
+                      <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={(event) => requestConfirmation("move_end", e, event.currentTarget)} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Back to end</button>
                     </span>
                   </li>
                 ))}
@@ -509,7 +685,6 @@ export default function QueueBoard({
             </div>
           )}
         </section>
-
         <section aria-labelledby="walkin-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-3">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8151AE]">Front desk entry</p>
           <h2 id="walkin-heading" className="mt-1 text-lg font-bold">Add a walk-in</h2>
@@ -519,7 +694,6 @@ export default function QueueBoard({
               <label htmlFor="walkin-name" className="mb-1.5 block text-sm font-semibold">Patient name</label>
               <input id="walkin-name" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
-
             <div>
               <label
                 htmlFor="walkin-phone"
@@ -530,7 +704,6 @@ export default function QueueBoard({
                   (optional)
                 </span>
               </label>
-
               <input
                 id="walkin-phone"
                 type="tel"
@@ -544,13 +717,7 @@ export default function QueueBoard({
                   setPhone(normalizeMobileInput(e.target.value))
                 }
               />
-
-              <p className="mt-1.5 text-xs text-[#756581]">
-                Enter 11 digits starting with 09, or +63 followed by
-                10 digits starting with 9.
-              </p>
             </div>
-
             <div>
               <label htmlFor="walkin-reason" className="mb-1.5 block text-sm font-semibold">Reason for visit <span className="font-normal text-[#756581]">(optional)</span></label>
               <select id="walkin-reason" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -572,54 +739,71 @@ export default function QueueBoard({
               {adding ? "Adding patient…" : "Add to queue"}
             </button>
           </form>
-          <p className="mt-3 text-xs leading-5 text-[#756581]">No phone? Leave it blank and tell the patient their number out loud.</p>
         </section>
       </div>
-
-      <section aria-label="Today at a glance" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {[
-          ["Waiting", waiting.length],
-          ["Served", served],
-          ["No-show", noShow],
-          ["Left queue", left],
-          ["Average wait", avgWait === null ? "—" : `${avgWait} min`],
-        ].map(([label, value]) => (
-          <div key={label as string} className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold text-[#756581]">{label}</p>
-            <p className="mt-1 text-2xl font-extrabold tracking-tight text-[#2E1747]">{value}</p>
-          </div>
-        ))}
-      </section>
-
-      <details className="group mb-6 rounded-2xl border border-[#E4D5F6] bg-white shadow-sm sm:mb-8">
-        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-bold text-[#2E1747] sm:px-5">
-          <span>Share the patient queue</span>
-          <span className="text-xl text-[#6D3AA8] transition group-open:rotate-45" aria-hidden="true">+</span>
-        </summary>
-        <div className="grid gap-6 border-t border-[#E4D5F6] p-4 sm:p-5 md:grid-cols-[auto_1fr]">
-          <div>
-            <div id="qr-wrap" className="w-44 rounded-2xl border border-[#E4D5F6] bg-white p-3 shadow-sm sm:w-48">
-              {origin && <QRCodeSVG value={joinUrl} width="100%" height="100%" />}
-            </div>
-            <button type="button" onClick={printPoster} className="mt-3 min-h-11 w-full rounded-xl bg-[#6D3AA8] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#572C87]">Print QR poster</button>
-          </div>
-          <div className="min-w-0 space-y-4 text-sm">
-            <div className="rounded-xl bg-[#FAF8FF] p-3">
-              <p className="font-semibold text-[#2E1747]">Patient link</p>
-              <p className="mt-1 break-all text-[#756581]">{joinUrl}</p>
-            </div>
-            <div className="rounded-xl bg-[#FAF8FF] p-3">
-              <p className="font-semibold text-[#2E1747]">TV display link</p>
-              <p className="mt-1 break-all text-[#756581]">{displayUrl}</p>
-            </div>
-            {origin.includes("localhost") && (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                Phones cannot open a localhost QR code. It will work after the app is deployed online.
+      {confirmTarget && (() => {
+        const copy = confirmationCopy(confirmTarget);
+        const actionStyle = {
+          blue: "border-[#93C5FD] bg-[#DBEAFE] text-[#1D4ED8] hover:bg-[#BFDBFE]",
+          teal: "border-[#5EEAD4] bg-[#CCFBF1] text-[#0F766E] hover:bg-[#99F6E4]",
+          green: "border-[#32965F] bg-[#32965F] text-white hover:bg-[#287F50]",
+          red: "border-[#C74652] bg-[#C74652] text-white hover:bg-[#AC3642]",
+          amber: "border-[#F4CC85] bg-[#FFF2D8] text-[#92400E] hover:bg-[#FDE7BD]",
+          purple: "border-[#C5ACE6] bg-[#F2EAFF] text-[#6D3AA8] hover:bg-[#E7D8FB]",
+        }[copy.tone];
+        return (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-[#241334]/60 p-4 backdrop-blur-[2px]"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) closeConfirmation();
+            }}
+          >
+            <div
+              ref={confirmDialogRef}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby={`${dialogId}-title`}
+              aria-describedby={`${dialogId}-description`}
+              className="w-full max-w-md rounded-2xl border border-[#E4D5F6] bg-white p-5 text-left text-[#2E1747] shadow-[0_24px_70px_rgba(40,20,50,0.25)] sm:p-6"
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#F2EAFF] text-[#6D3AA8]" aria-hidden="true">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 11v5M12 8h.01" />
+                  </svg>
+                </div>
+                <h2 id={`${dialogId}-title`} className="text-xl font-bold leading-7">
+                  {copy.title}
+                </h2>
+              </div>
+              <p id={`${dialogId}-description`} className="text-sm leading-6 text-[#756581]">
+                {copy.message}
               </p>
-            )}
+              <div className="mt-6 grid grid-cols-2 gap-2">
+                <button
+                  ref={confirmCancelRef}
+                  type="button"
+                  disabled={confirmBusy}
+                  onClick={closeConfirmation}
+                  className="min-h-11 rounded-xl border border-[#E2DCE8] bg-white px-3 py-2.5 text-sm font-semibold text-[#49365E] transition hover:bg-[#F8F7FB] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={confirmBusy}
+                  aria-busy={confirmBusy}
+                  onClick={() => void confirmAction()}
+                  className={`min-h-11 rounded-xl border px-3 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6] disabled:opacity-50 ${actionStyle}`}
+                >
+                  {confirmBusy ? "Updating…" : copy.confirmLabel}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </details>
+        );
+      })()}
     </div>
   );
 }

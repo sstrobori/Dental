@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { estimateLabel } from "@/lib/today";
+import { loadQueueEstimateMetadata } from "@/lib/queueEstimate";
 
 type Ticket = {
   clinic: string;
@@ -13,6 +14,7 @@ type Ticket = {
   returning: boolean;
   name: string;
   est_minutes?: number | null;
+  current_visit_delayed?: boolean;
 };
 
 type SyncState = "connecting" | "live" | "fallback" | "offline";
@@ -26,14 +28,30 @@ export default function TicketView({ entryId }: { entryId: string }) {
   const [refreshError, setRefreshError] = useState("");
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc("queue_status", { p_entry_id: entryId });
+    const [{ data, error }, metadata] = await Promise.all([
+      supabase.rpc("queue_status", { p_entry_id: entryId }),
+      loadQueueEstimateMetadata(supabase, [entryId]),
+    ]);
     if (error) {
       setRefreshError("Updates are temporarily delayed. Your last known position is still shown.");
       setSyncState(navigator.onLine ? "fallback" : "offline");
       setLoaded(true);
       return;
     }
-    setTicket(data as Ticket | null);
+    const row = Array.isArray(data) ? data[0] : data;
+    const estimate = metadata?.get(entryId);
+    setTicket((current) => row ? {
+      ...(row as Ticket),
+      ...(estimate ? {
+        people_ahead: estimate.people_ahead,
+        est_minutes: estimate.est_minutes,
+        current_visit_delayed: estimate.current_visit_delayed,
+      } : metadata === null && current ? {
+        people_ahead: current.people_ahead,
+        est_minutes: current.est_minutes,
+        current_visit_delayed: current.current_visit_delayed,
+      } : {}),
+    } : null);
     setRefreshError("");
     setLastUpdatedAt(new Date());
     setLoaded(true);
@@ -151,6 +169,12 @@ export default function TicketView({ entryId }: { entryId: string }) {
             {ticket.est_minutes != null && <p className="font-semibold">{estimateLabel(ticket.est_minutes)}</p>}
             {ticket.now_serving !== null && <p className="font-medium">Now serving #{ticket.now_serving}</p>}
           </div>
+        )}
+
+        {isWaiting && ticket.current_visit_delayed && (
+          <p className="mt-3 w-full max-w-md rounded-xl border border-[#DCCBED] bg-[#F7F2FC] px-3 py-2.5 text-xs font-medium leading-5 text-[#5C327F]" role="status">
+            A current visit is taking longer than expected. Your estimated waiting time may change.
+          </p>
         )}
 
         {isWaiting && (

@@ -16,7 +16,7 @@ export default function SettingsDetail({ section }: { section: "booking" | "depo
   const heading = headings[section];
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-6 text-[#2E1747] sm:px-6 sm:py-8 lg:px-8">
+    <main className="w-full px-4 py-6 text-[#2E1747] sm:px-6 sm:py-8 lg:px-8">
       <BackLink label="Back to Clinic Settings" />
       <header className="mb-6 mt-3">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8B5CB5]">Clinic settings</p>

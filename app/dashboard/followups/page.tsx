@@ -67,24 +67,8 @@ export default function FollowUpsPage() {
 
   const shown = rows.filter((p) => showContacted || !recentlyContacted(p));
 
-  function downloadCsv() {
-    const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    const lines = ["name,phone,guardian,last_visit,visits"].concat(
-      shown.map((p) =>
-        [q(p.name), q(p.phone ?? ""), q(p.guardian_name ?? ""),
-         q(new Date(p.last_visit_at).toLocaleDateString("en-PH")), String(p.visit_count)].join(",")
-      )
-    );
-    const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "follow-ups.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
+    <div className="w-full p-4 sm:p-6 lg:p-8">
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8b5cb5]">Patient recall</p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Due for a visit</h1>
@@ -95,7 +79,7 @@ export default function FollowUpsPage() {
 
       {error && <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</p>}
 
-      <div className="admin-card mt-5 grid gap-4 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-[1fr_1fr_auto_auto] xl:items-end">
+      <div className="admin-card mt-5 grid gap-4 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-[1fr_1fr_auto] xl:items-end">
         <label className="flex flex-col gap-2 text-sm font-semibold text-[#49355f]">Not seen for
           <select className="min-h-11 border px-3 py-2 font-normal" value={months} onChange={(e) => setMonths(Number(e.target.value))}>
             {[3, 6, 9, 12].map((m) => <option key={m} value={m}>{m} months</option>)}
@@ -105,7 +89,6 @@ export default function FollowUpsPage() {
           <input type="checkbox" className="h-5 w-5" checked={showContacted} onChange={(e) => setShowContacted(e.target.checked)} />
           Show recently contacted
         </label>
-        <button onClick={downloadCsv} disabled={shown.length === 0} className="min-h-11 rounded-xl border border-[#d7c4ea] bg-white px-4 py-2 text-sm font-semibold text-[#5c327f] disabled:opacity-40">Download CSV</button>
         <span className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#f2eaff] px-4 text-sm font-bold text-[#6d3aa8]">{shown.length} patients</span>
       </div>
 
