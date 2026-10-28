@@ -434,17 +434,15 @@ export default function AdminShell({
 
             <BrandMark />
 
-            <div className="min-w-0">
+<div className="min-w-0">
+  <p className="text-sm font-bold leading-tight text-[#2E1747]">
+    Dental Queue and Appointment Management
+  </p>
 
-              <p className="truncate text-sm font-bold">
-                {clinicName || "Clinic setup"}
-              </p>
-
-              <p className="text-xs font-medium text-[#756581]">
-                Staff
-              </p>
-
-            </div>
+  <p className="mt-1 text-xs font-medium text-[#756581]">
+    Clinic workspace
+  </p>
+</div>
           </div>
 
           <button
