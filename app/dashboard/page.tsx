@@ -1,18 +1,27 @@
 
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { startOfTodayManila } from "@/lib/today";
 import QueueBoard from "./QueueBoard";
 import JoinClinic from "./JoinClinic";
 
-export default async function Dashboard() {
+// DASHBOARD CONTENT
+async function DashboardContent() {
+  // Ensure authentication and today's date are evaluated
+  // when a user visits the dashboard.
+  await connection();
+
   const supabase = await createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect("/login");
+  if (!user) {
+    redirect("/login");
+  }
 
   const { data: staff } = await supabase
     .from("clinic_staff")
@@ -46,5 +55,22 @@ export default async function Dashboard() {
       initialGraceMinutes={clinic?.grace_minutes ?? 15}
       initial={entries ?? []}
     />
+  );
+}
+
+// SUSPENSE WRAPPER
+export default function Dashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#FAF8FF]">
+          <p className="text-sm font-semibold text-[#6D3AA8]">
+            Loading dashboard...
+          </p>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }

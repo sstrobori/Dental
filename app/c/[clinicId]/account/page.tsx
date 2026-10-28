@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import PatientShell from "@/components/patient/PatientShell";
@@ -30,7 +30,7 @@ const SETTINGS = [
   },
 ];
 
-export default function ManageAccountPage() {
+function ManageAccountContent() {
   const { clinicId } = useParams<{ clinicId: string }>();
 
   const supabase = useMemo(() => createClient(), []);
@@ -61,13 +61,18 @@ export default function ManageAccountPage() {
     };
   }, [supabase]);
 
+  // Keep existing account settings routes.
   const home = `/c/${clinicId}`;
+
+  // Use the new portal routes for navigation.
+  const patientHome = `/patient/${clinicId}`;
+  const guestHome = `/guest/${clinicId}`;
 
   return (
     <PatientShell hideHeaderOnMobile>
       <main className="mx-auto mt-6 w-full max-w-2xl pb-10 sm:mt-10">
         <Link
-          href={`${home}?tab=profile`}
+          href={`${patientHome}?tab=profile`}
           className="text-sm font-semibold text-[#6D3AA8] hover:underline"
         >
           ← Back to Profile
@@ -77,6 +82,7 @@ export default function ManageAccountPage() {
           <h1 className="mt-2 text-2xl font-bold text-[#2E1747] sm:text-3xl">
             Manage account
           </h1>
+
           {loading ? (
             <p className="mt-6 text-sm text-[#756581]">
               Checking your account…
@@ -85,10 +91,10 @@ export default function ManageAccountPage() {
             <div className="mt-6 rounded-xl bg-[#FAF8FF] p-4 text-sm">
               Please sign in to manage your account.{" "}
               <Link
-                href={home}
+                href={`${guestHome}?tab=account`}
                 className="font-semibold text-[#6D3AA8] underline"
               >
-                Go to patient portal
+                Go to patient sign in
               </Link>
             </div>
           ) : (
@@ -135,5 +141,22 @@ export default function ManageAccountPage() {
         </section>
       </main>
     </PatientShell>
+  );
+}
+
+// SUSPENSE WRAPPER FOR NEXT.JS PRERENDERING
+export default function ManageAccountPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#FAF8FF] text-[#6D3AA8]">
+          <p className="text-sm font-semibold">
+            Loading account settings...
+          </p>
+        </div>
+      }
+    >
+      <ManageAccountContent />
+    </Suspense>
   );
 }

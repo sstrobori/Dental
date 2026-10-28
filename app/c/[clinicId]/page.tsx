@@ -1,16 +1,22 @@
+
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
-// Backward-compatible entry point for old clinic links and printed QR codes.
-// Patient sign-in detection happens in the /guest route and forwards to /patient.
-export default async function LegacyPatientPage({
+type Props = {
+  params: Promise<{ clinicId: string }>;
+  searchParams: Promise<
+    Record<string, string | string[] | undefined>
+  >;
+};
+
+// Handles the old clinic URLs.
+async function RedirectToGuest({
   params,
   searchParams,
-}: {
-  params: Promise<{ clinicId: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+}: Props) {
   const { clinicId } = await params;
   const originalQuery = await searchParams;
+
   const query = new URLSearchParams();
 
   for (const [key, value] of Object.entries(originalQuery)) {
@@ -21,6 +27,28 @@ export default async function LegacyPatientPage({
     }
   }
 
-  const suffix = query.toString();
-  redirect(`/guest/${encodeURIComponent(clinicId)}${suffix ? `?${suffix}` : ""}`);
+const suffix = query.toString();
+
+return redirect(
+  `/guest/${encodeURIComponent(clinicId)}${
+    suffix ? `?${suffix}` : ""
+  }`
+);
+}
+
+// Suspense handles runtime URL data during prerendering.
+export default function LegacyPatientPage(props: Props) {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#FAF8FF] text-[#6D3AA8]">
+          <p className="text-sm font-semibold">
+            Redirecting to clinic portal...
+          </p>
+        </main>
+      }
+    >
+      <RedirectToGuest {...props} />
+    </Suspense>
+  );
 }

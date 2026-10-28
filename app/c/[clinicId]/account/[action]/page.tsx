@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import PatientShell from "@/components/patient/PatientShell";
@@ -36,7 +36,7 @@ function validatePassword(password: string) {
   return "";
 }
 
-export default function AccountActionPage() {
+function AccountActionContent() {
   const { clinicId, action: segment } = useParams<{ clinicId: string; action: string }>();
   const action: Action | null = Object.prototype.hasOwnProperty.call(LABELS, segment) ? segment as Action : null;
   const supabase = useMemo(() => createClient(), []);
@@ -301,3 +301,21 @@ export default function AccountActionPage() {
     </PatientShell>
   );
 }
+
+
+export default function AccountActionPage() {
+  return (
+    <Suspense
+      fallback={
+        <PatientShell hideHeaderOnMobile>
+          <div className="mx-auto mt-10 max-w-xl rounded-2xl border border-[#E4D5F6] bg-white p-6 text-center text-sm text-[#756581]">
+            Loading account settings...
+          </div>
+        </PatientShell>
+      }
+    >
+      <AccountActionContent />
+    </Suspense>
+  );
+}
+
