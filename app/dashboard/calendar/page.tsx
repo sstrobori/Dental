@@ -10,9 +10,25 @@ type ServedEntry = {
   queue_number: number;
   name: string;
   visit_reason: string | null;
+  appointment_id: string | null;
   served_at: string | null;
   finished_at: string | null;
   created_at: string;
+};
+
+type AppointmentEntry = {
+  id: string;
+  name: string;
+  reason: string | null;
+  starts_at: string;
+  status: "booked" | "confirmed" | "arrived" | "completed";
+};
+
+const APPOINTMENT_STATUS: Record<AppointmentEntry["status"], string> = {
+  booked: "Booked",
+  confirmed: "Confirmed",
+  arrived: "Checked in",
+  completed: "Completed",
 };
 
 const PH_TIMEZONE = "Asia/Manila";
@@ -107,6 +123,7 @@ export default function ServedCalendarPage() {
   );
 
   const [records, setRecords] = useState<ServedEntry[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -192,7 +209,7 @@ export default function ServedCalendarPage() {
     };
   }, [supabase]);
 
-  // LOAD SERVED PATIENTS
+  // LOAD SERVED VISITS AND SCHEDULED APPOINTMENTS
 
   useEffect(() => {
     if (!clinicId) return;
@@ -217,7 +234,7 @@ export default function ServedCalendarPage() {
         } = await supabase
           .from("queue_entries")
           .select(
-            "id, queue_number, name, visit_reason, created_at, finished_at, served_at"
+            "id, queue_number, name, visit_reason, appointment_id, created_at, finished_at, served_at"
           )
           .eq("clinic_id", clinicId)
           .eq("status", "served")
@@ -246,7 +263,7 @@ export default function ServedCalendarPage() {
           const fallback = await supabase
             .from("queue_entries")
             .select(
-              "id, queue_number, name, visit_reason, created_at, finished_at"
+              "id, queue_number, name, visit_reason, appointment_id, created_at, finished_at"
             )
             .eq("clinic_id", clinicId)
             .eq("status", "served")
@@ -294,8 +311,38 @@ export default function ServedCalendarPage() {
         }
       }
 
+      // Use the appointment's scheduled date, not its creation date.
+      // Fetch in pages so busy clinics are not limited to 1,000 rows.
+      const scheduled: AppointmentEntry[] = [];
+
+      for (let offset = 0; ; offset += batchSize) {
+        const { data, error: appointmentError } = await supabase
+          .from("appointments")
+          .select("id, name, reason, starts_at, status")
+          .eq("clinic_id", clinicId)
+          .gte("starts_at", calendar.beginning)
+          .lt("starts_at", calendar.end)
+          .in("status", ["booked", "confirmed", "arrived", "completed"])
+          .order("starts_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(offset, offset + batchSize - 1);
+
+        if (cancelled) return;
+
+        if (appointmentError) {
+          setError(`Could not load appointments: ${appointmentError.message}`);
+          setLoading(false);
+          return;
+        }
+
+        const page = (data ?? []) as AppointmentEntry[];
+        scheduled.push(...page);
+        if (page.length < batchSize) break;
+      }
+
       if (!cancelled) {
         setRecords(all);
+        setAppointments(scheduled);
         setLoading(false);
       }
     }
@@ -328,9 +375,17 @@ export default function ServedCalendarPage() {
           table: "queue_entries",
           filter: `clinic_id=eq.${clinicId}`,
         },
-        () => {
-          setRefreshKey((value) => value + 1);
-        }
+        () => setRefreshKey((value) => value + 1)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "appointments",
+          filter: `clinic_id=eq.${clinicId}`,
+        },
+        () => setRefreshKey((value) => value + 1)
       )
       .subscribe();
 
@@ -398,7 +453,29 @@ export default function ServedCalendarPage() {
     return grouped;
   }, [records]);
 
-  const daysWithVisits = byDate.size;
+  // Bookings are grouped by their scheduled date; served visits are
+  // grouped separately by completion date. They represent different
+  // events and should not be combined into one misleading served count.
+  const appointmentsByDate = useMemo(() => {
+    const grouped = new Map<string, AppointmentEntry[]>();
+    for (const appt of appointments) {
+      const key = manilaDateKey(appt.starts_at);
+      const rows = grouped.get(key) ?? [];
+      rows.push(appt);
+      grouped.set(key, rows);
+    }
+    for (const rows of grouped.values()) {
+      rows.sort((a, b) =>
+        new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+      );
+    }
+    return grouped;
+  }, [appointments]);
+
+  const daysWithActivity = new Set([
+    ...byDate.keys(),
+    ...appointmentsByDate.keys(),
+  ]).size;
 
   const estimatedDateCount = records.filter(
     (entry) =>
@@ -411,6 +488,10 @@ export default function ServedCalendarPage() {
     : [];
 
   const selectedCount = selectedRecords.length;
+  const selectedAppointments = selectedDay
+    ? appointmentsByDate.get(selectedDay) ?? []
+    : [];
+  const selectedAppointmentsCount = selectedAppointments.length;
 
   function openDate(
     day: string,
@@ -431,6 +512,7 @@ export default function ServedCalendarPage() {
   function changeMonth(direction: number) {
     setSelectedDay(null);
     setRecords([]);
+    setAppointments([]);
 
     setMonth((current) =>
       shiftMonth(current, direction)
@@ -446,7 +528,7 @@ export default function ServedCalendarPage() {
 
         <div>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
-            Served patients calendar
+            Visits and appointments calendar
           </h1>
         </div>
       </div>
@@ -465,7 +547,7 @@ export default function ServedCalendarPage() {
       {/* CALENDAR */}
 
       <section
-        aria-label="Served patients by month"
+        aria-label="Served visits and booked appointments by month"
         className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm"
       >
 
@@ -485,21 +567,25 @@ export default function ServedCalendarPage() {
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
 
-            {/* MONTHLY TOTAL */}
+            {/* MONTHLY TOTALS — TWO DIFFERENT EVENT TYPES */}
 
-            <div className="mr-auto flex items-center gap-3 rounded-xl bg-[#F7F2FF] px-3 py-2.5 sm:px-4">
+            <div className="mr-auto flex flex-wrap items-center gap-2">
 
-              <span className="text-2xl font-extrabold tabular-nums text-[#6D3AA8]">
-                {loading || checkingAccess
-                  ? "—"
-                  : records.length.toLocaleString("en-PH")}
-              </span>
+              <div className="flex items-center gap-2 rounded-xl bg-[#DCFCE7] px-3 py-2.5 sm:px-4">
+                <span className="text-2xl font-extrabold tabular-nums text-[#15803D]">
+                  {loading || checkingAccess ? "—" : records.length.toLocaleString("en-PH")}
+                </span>
+                <span className="text-xs font-semibold text-[#15803D]">
+                  Served
+                </span>
+              </div>
 
-              <span className="text-xs font-semibold leading-4 text-[#5C327F]">
-                Patients
-                <br />
-                served
-              </span>
+              <div className="flex items-center gap-2 rounded-xl bg-[#EAF4FF] px-3 py-2.5 sm:px-4">
+                <span className="text-2xl font-extrabold tabular-nums text-[#1D4ED8]">
+                  {loading || checkingAccess ? "—" : appointments.length.toLocaleString("en-PH")}
+                </span>
+                <span className="text-xs font-semibold text-[#1D4ED8]">Appointments</span>
+              </div>
             </div>
 
             {/* MONTH NAVIGATION */}
@@ -532,6 +618,7 @@ export default function ServedCalendarPage() {
                 onClick={() => {
                   setSelectedDay(null);
                   setRecords([]);
+                  setAppointments([]);
 
                   setMonth(
                     todayManila().slice(0, 7)
@@ -618,11 +705,14 @@ export default function ServedCalendarPage() {
                 const servedCount =
                   byDate.get(dateKey)?.length ?? 0;
 
+                const appointmentCount =
+                  appointmentsByDate.get(dateKey)?.length ?? 0;
+
                 const isToday = dateKey === today;
                 const isSelected =
                   dateKey === selectedDay;
 
-                const hasVisits = servedCount > 0;
+                const hasActivity = servedCount + appointmentCount > 0;
 
                 return (
                   <button
@@ -634,15 +724,11 @@ export default function ServedCalendarPage() {
                         event.currentTarget
                       )
                     }
-                    aria-label={`${dayLabel(dateKey)}: ${servedCount} ${
-                      servedCount === 1
-                        ? "patient"
-                        : "patients"
-                    } served. View details.`}
+                    aria-label={`${dayLabel(dateKey)}: ${servedCount} served, ${appointmentCount} appointments. View details.`}
                     aria-pressed={isSelected}
                     className={`flex min-h-[72px] min-w-0 flex-col items-start rounded-xl border p-1.5 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] sm:min-h-[108px] sm:p-3 ${                      isSelected
                         ? "border-[#6D3AA8] bg-[#F0E6FF] ring-1 ring-[#6D3AA8]"
-                        : hasVisits
+                        : hasActivity
                           ? "border-[#E4D5F6] bg-[#FCFAFF] hover:border-[#BA95E3] hover:bg-[#F7F0FF]"
                           : "border-[#EEE8F4] bg-white hover:bg-[#FAF8FF]"
                     }`}
@@ -661,15 +747,17 @@ export default function ServedCalendarPage() {
                     {dayNumber}
                   </span>
 
-                  {/* SERVED COUNT - ONLY WHEN THERE ARE PATIENTS */}
-
-                  {/* SERVED COUNT - CENTERED */}
-
-                  {servedCount > 0 && (
-                    <span className="mt-auto block w-full pb-1 text-center text-[11px] font-semibold leading-4 text-[#6D3AA8] sm:text-sm">
-                      {servedCount} served
-                    </span>
-                  )}
+                  {/* COUNTS — SEPARATE COMPLETED VISITS AND BOOKINGS */}
+                  <span className="mt-auto flex w-full flex-col gap-0.5 pb-1 text-center text-[10px] font-semibold leading-4 sm:text-xs">
+                    {servedCount > 0 && (
+                      <span className="font-semibold text-[#15803D]">
+                        {servedCount} served
+                      </span>
+                    )}
+                    {appointmentCount > 0 && (
+                      <span className="text-[#1D4ED8]">{appointmentCount} appt{appointmentCount === 1 ? "" : "s"}</span>
+                    )}
+                  </span>
 
                   </button>
                 );
@@ -683,28 +771,22 @@ export default function ServedCalendarPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-[#EDE5F5] bg-[#FCFAFF] px-4 py-3 text-xs text-[#756581] sm:px-6">
 
-          <div className="flex items-center gap-2">
-            <span
-              className="h-3 w-3 rounded-full bg-[#6D3AA8]"
-              aria-hidden="true"
-            />
-
-          <span>
-            Dates with completed visits show the number of patients served.
-          </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-[#15803D]" aria-hidden="true" />
+              Served visits
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-[#3B82F6]" aria-hidden="true" />
+              Appointments
+            </span>
           </div>
 
-          {!loading &&
-            !checkingAccess &&
-            !error && (
-              <span>
-                {daysWithVisits}{" "}
-                {daysWithVisits === 1
-                  ? "day"
-                  : "days"}{" "}
-                with completed visits
-              </span>
-            )}
+          {!loading && !checkingAccess && !error && (
+            <span>
+              {daysWithActivity} {daysWithActivity === 1 ? "day" : "days"} with activity
+            </span>
+          )}
 
         </div>
       </section>
@@ -755,7 +837,7 @@ export default function ServedCalendarPage() {
               <div className="min-w-0">
 
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8B5CB5]">
-                  Daily visit summary
+                  Daily clinic schedule
                 </p>
 
                 <h2
@@ -765,13 +847,14 @@ export default function ServedCalendarPage() {
                   {dayLabel(selectedDay)}
                 </h2>
 
-                <span className="mt-3 inline-flex rounded-full bg-[#F2EAFF] px-3 py-1.5 text-xs font-bold text-[#6D3AA8]">
-                  {selectedCount}{" "}
-                  {selectedCount === 1
-                    ? "patient"
-                    : "patients"}{" "}
-                  served
-                </span>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="inline-flex rounded-full bg-[#DCFCE7] px-3 py-1.5 text-xs font-bold text-[#15803D]">
+                    {selectedCount} served
+                  </span>
+                  <span className="inline-flex rounded-full bg-[#EAF4FF] px-3 py-1.5 text-xs font-bold text-[#1D4ED8]">
+                    {selectedAppointmentsCount} appointments
+                  </span>
+                </div>
 
               </div>
 
@@ -798,63 +881,87 @@ export default function ServedCalendarPage() {
 
             </header>
 
-            {/* PATIENT LIST */}
-
-            <div className="overflow-y-auto p-4 sm:p-6">
-
-              {selectedCount === 0 ? (
+            {/* DAILY DETAILS — BOOKINGS ARE NOT COUNTED AS SERVED */}
+            <div className="space-y-6 overflow-y-auto p-4 sm:p-6">
+              {selectedCount === 0 && selectedAppointmentsCount === 0 && (
                 <p className="rounded-xl bg-[#FAF8FF] p-5 text-center text-sm text-[#756581]">
-                  No served patients recorded
-                  for this day.
+                  No completed visits or appointments for this day.
                 </p>
-              ) : (
-                <ul className="space-y-3">
-
-                  {selectedRecords.map((patient) => {
-                    const time =
-                      patient.served_at ??
-                      patient.finished_at;
-
-                    return (
-                      <li
-                        key={patient.id}
-                        className="flex items-start gap-3 rounded-xl border border-[#E4D5F6] bg-white p-4"
-                      >
-
-                        {/* QUEUE NUMBER */}
-
-                        <div className="min-w-[3rem] rounded-lg bg-[#F2EAFF] px-2 py-2 text-center text-sm font-extrabold tabular-nums text-[#6D3AA8]">
-                          #{patient.queue_number}
-                        </div>
-
-                        {/* PATIENT DETAILS */}
-
-                        <div className="min-w-0 flex-1">
-
-                          <p className="break-words font-bold text-[#2E1747]">
-                            {patient.name}
-                          </p>
-
-                          <p className="mt-1 break-words text-sm text-[#756581]">
-                            {patient.visit_reason ||
-                              "Reason not specified"}
-                          </p>
-
-                          <p className="mt-2 text-xs font-semibold text-[#6D3AA8]">
-                            {time
-                              ? `Served at ${servedTime(time)}`
-                              : "Completion time not recorded · date estimated"}
-                          </p>
-
-                        </div>
-
-                      </li>
-                    );
-                  })}
-
-                </ul>
               )}
 
+              {selectedAppointmentsCount > 0 && (
+                <section aria-label="Scheduled appointments">
+                  <h3 className="mb-3 text-sm font-bold text-[#1D4ED8]">
+                    Appointments ({selectedAppointmentsCount})
+                  </h3>
+                  <ul className="space-y-3">
+                    {selectedAppointments.map((appointment) => (
+                      <li
+                        key={`appointment-${appointment.id}`}
+                        className="flex items-start gap-3 rounded-xl border border-[#BFDBFE] bg-[#F8FBFF] p-4"
+                      >
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#DBEAFE] text-[#1D4ED8]" aria-hidden="true">
+                          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="5" width="18" height="16" rx="3" />
+                            <path d="M8 3v4m8-4v4M3 10h18" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words font-bold text-[#2E1747]">{appointment.name}</p>
+                          <p className="mt-1 break-words text-sm text-[#756581]">
+                            {appointment.reason || "Reason not specified"}
+                          </p>
+                          <p className="mt-2 text-xs font-semibold text-[#1D4ED8]">
+                            Scheduled at {servedTime(appointment.starts_at)}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full border border-[#BFDBFE] bg-white px-2 py-1 text-[11px] font-bold text-[#1D4ED8]">
+                          {APPOINTMENT_STATUS[appointment.status]}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {selectedCount > 0 && (
+                <section aria-label="Completed queue visits">
+                  <h3 className="mb-3 text-sm font-bold text-[#6D3AA8]">
+                    Served visits ({selectedCount})
+                  </h3>
+                  <ul className="space-y-3">
+                    {selectedRecords.map((patient) => {
+                      const time = patient.served_at ?? patient.finished_at;
+                      return (
+                        <li
+                          key={`served-${patient.id}`}
+                          className="flex items-start gap-3 rounded-xl border border-[#E4D5F6] bg-white p-4"
+                        >
+                          <div className="min-w-[3rem] rounded-lg bg-[#F2EAFF] px-2 py-2 text-center text-sm font-extrabold tabular-nums text-[#6D3AA8]">
+                            #{patient.queue_number}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words font-bold text-[#2E1747]">{patient.name}</p>
+                            <p className="mt-1 break-words text-sm text-[#756581]">
+                              {patient.visit_reason || "Reason not specified"}
+                            </p>
+                            <p className="mt-2 text-xs font-semibold text-[#6D3AA8]">
+                              {time
+                                ? `Served at ${servedTime(time)}`
+                                : "Completion time not recorded · date estimated"}
+                            </p>
+                          </div>
+                          {patient.appointment_id && (
+                            <span className="shrink-0 rounded-full bg-[#F2EAFF] px-2 py-1 text-[11px] font-semibold text-[#6D3AA8]">
+                              Booked visit
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
             </div>
           </section>
         </div>

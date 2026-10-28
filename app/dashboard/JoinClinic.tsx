@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import RequiredMark from "@/components/RequiredMark";
 
 export default function JoinClinic({ email }: { email: string }) {
   const supabase = createClient();
@@ -68,9 +69,10 @@ export default function JoinClinic({ email }: { email: string }) {
             </span>
             <h2 className="mt-4 text-xl font-bold">Join an existing clinic</h2>
             <p className="mt-2 text-sm leading-6 text-[#756581]">Enter the invite code sent by your clinic owner.</p>
-            <label htmlFor="clinic-invite-code" className="mt-5 text-sm font-semibold">Invite code</label>
+            <label htmlFor="clinic-invite-code" className="mt-5 text-sm font-semibold">Invite code <RequiredMark /></label>
             <input
               id="clinic-invite-code"
+              required
               className="mt-2 min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 uppercase tracking-widest outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]"
               placeholder="Code from the clinic owner"
               value={code}
@@ -90,9 +92,10 @@ export default function JoinClinic({ email }: { email: string }) {
             </span>
             <h2 className="mt-4 text-xl font-bold">Create a new clinic</h2>
             <p className="mt-2 text-sm leading-6 text-[#756581]">Start a workspace and invite your staff after setup.</p>
-            <label htmlFor="new-clinic-name" className="mt-5 text-sm font-semibold">Clinic name</label>
+            <label htmlFor="new-clinic-name" className="mt-5 text-sm font-semibold">Clinic name <RequiredMark /></label>
             <input
               id="new-clinic-name"
+              required
               className="mt-2 min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 outline-none placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]"
               placeholder="e.g. Dental Queue and Appointment Management"
               value={clinicName}

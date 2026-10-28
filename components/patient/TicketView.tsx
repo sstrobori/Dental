@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { estimateLabel } from "@/lib/today";
 import { loadQueueEstimateMetadata } from "@/lib/queueEstimate";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 type Ticket = {
   clinic: string;
@@ -26,6 +27,9 @@ export default function TicketView({ entryId }: { entryId: string }) {
   const [syncState, setSyncState] = useState<SyncState>("connecting");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [refreshError, setRefreshError] = useState("");
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
 
   const load = useCallback(async () => {
     const [{ data, error }, metadata] = await Promise.all([
@@ -89,10 +93,23 @@ export default function TicketView({ entryId }: { entryId: string }) {
     };
   }, [supabase, entryId, load]);
 
-  async function leave() {
-    if (!window.confirm("Leave the queue? You will lose your place.")) return;
-    await supabase.rpc("leave_queue", { p_entry_id: entryId });
-    load();
+  async function confirmLeave() {
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveError("");
+    try {
+      const { error } = await supabase.rpc("leave_queue", { p_entry_id: entryId });
+      if (error) {
+        setLeaveError(`Could not leave the queue: ${error.message}`);
+        return;
+      }
+      setLeaveOpen(false);
+      await load();
+    } catch {
+      setLeaveError("Something went wrong. Please check your queue status and try again.");
+    } finally {
+      setLeaving(false);
+    }
   }
 
   if (!loaded) {
@@ -134,6 +151,7 @@ export default function TicketView({ entryId }: { entryId: string }) {
   const isWaiting = ticket.status === "waiting";
 
   return (
+    <>
     <div
       className={`relative overflow-hidden rounded-[1.75rem] border p-5 text-center shadow-[0_18px_50px_-30px_rgba(70,34,103,0.5)] sm:p-8 ${
         isCalled
@@ -180,7 +198,10 @@ export default function TicketView({ entryId }: { entryId: string }) {
         {isWaiting && (
           <button
             type="button"
-            onClick={leave}
+            onClick={() => {
+              setLeaveError("");
+              setLeaveOpen(true);
+            }}
             className="mt-5 min-h-11 rounded-xl border border-[#CDB8E5] bg-white px-5 py-2.5 text-sm font-semibold text-[#5A2E8A] transition hover:border-[#6D3AA8] hover:bg-[#F8F3FF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCAF4]"
           >
             Leave the queue
@@ -210,5 +231,23 @@ export default function TicketView({ entryId }: { entryId: string }) {
         </p>
       </div>
     </div>
+    <ConfirmationModal
+      open={leaveOpen}
+      title="Are you sure you want to leave the queue?"
+      description="You will lose your current place in the queue. You will need to join again to get a new queue number."
+      confirmLabel="Yes, leave queue"
+      cancelLabel="Keep my place"
+      busy={leaving}
+      busyLabel="Leaving…"
+      tone="danger"
+      error={leaveError}
+      onCancel={() => {
+        if (leaving) return;
+        setLeaveOpen(false);
+        setLeaveError("");
+      }}
+      onConfirm={() => void confirmLeave()}
+    />
+    </>
   );
 }

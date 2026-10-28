@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import PatientShell from "@/components/patient/PatientShell";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { createClient } from "@/lib/supabase/client";
 
 type Action = "email" | "mobile" | "password" | "forgot-password" | "reset-password";
@@ -152,7 +153,6 @@ export default function AccountActionPage() {
 
   async function performAction() {
     if (!action) return;
-    setConfirmOpen(false);
     setBusy(true);
     setError("");
     setSuccess("");
@@ -202,6 +202,7 @@ export default function AccountActionPage() {
         }
         setCurrentPassword("");
       }
+      setConfirmOpen(false);
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Something went wrong. Please try again.");
     } finally {
@@ -265,7 +266,7 @@ export default function AccountActionPage() {
                   <label className={label}><span>Confirm new password <span className="text-red-500" aria-hidden="true">*</span></span>
                     <input className={field} type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
                   </label>
-                  <p className="text-xs leading-5 text-[#756581]">Use 12–128 characters, including uppercase and lowercase letters, a number, and a symbol. Don't reuse your current password.</p>
+                  <p className="text-xs leading-5 text-[#756581]">Use 12–128 characters, including uppercase and lowercase letters, a number, and a symbol. Don&apos;t reuse your current password.</p>
                 </>
               )}
 
@@ -281,18 +282,22 @@ export default function AccountActionPage() {
         </section>
       </main>
 
-      {confirmOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#241334]/60 p-4" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setConfirmOpen(false); }}>
-          <div role="alertdialog" aria-modal="true" aria-labelledby="account-confirm-title" aria-describedby="account-confirm-description" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <h2 id="account-confirm-title" className="text-xl font-bold text-[#2E1747]">{action === "forgot-password" ? "Send password reset link?" : action === "reset-password" ? "Reset your password?" : action === "email" ? "Change email address?" : action === "mobile" ? "Update contact number?" : "Change password?"}</h2>
-            <p id="account-confirm-description" className="mt-2 text-sm leading-6 text-[#756581]">Are you sure you want to {action === "forgot-password" ? "send a password-reset email" : action === "reset-password" ? "reset your password" : action === "email" ? "request this email change" : action === "mobile" ? "save this contact number" : "change your password"}?</p>
-            <div className="mt-6 flex gap-3">
-              <button type="button" onClick={() => setConfirmOpen(false)} className="min-h-11 flex-1 rounded-xl border border-[#D7C4EA] text-sm font-semibold text-[#5C327F] hover:bg-[#FAF8FF]">No, cancel</button>
-              <button type="button" onClick={() => void performAction()} disabled={busy} className="min-h-11 flex-1 rounded-xl bg-[#6D3AA8] text-sm font-semibold text-white hover:bg-[#572C87] disabled:opacity-50">{action === "forgot-password" ? "Send reset link" : action === "reset-password" ? "Reset password" : action === "email" ? "Request change" : action === "mobile" ? "Save changes" : "Change password"}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmationModal
+        open={confirmOpen}
+        title={action === "forgot-password" ? "Send password reset link?" : action === "reset-password" ? "Reset your password?" : action === "email" ? "Change email address?" : action === "mobile" ? "Update contact number?" : "Change password?"}
+        description={`Are you sure you want to ${action === "forgot-password" ? "send a password-reset email" : action === "reset-password" ? "reset your password" : action === "email" ? "request this email change" : action === "mobile" ? "save this contact number" : "change your password"}?`}
+        confirmLabel={action === "forgot-password" ? "Send reset link" : action === "reset-password" ? "Reset password" : action === "email" ? "Request change" : action === "mobile" ? "Save changes" : "Change password"}
+        cancelLabel="No, cancel"
+        busy={busy}
+        busyLabel={action === "forgot-password" ? "Sending…" : action === "reset-password" ? "Resetting…" : action === "email" ? "Requesting…" : action === "mobile" ? "Saving…" : "Changing…"}
+        error={confirmOpen ? error : ""}
+        onCancel={() => {
+          if (busy) return;
+          setConfirmOpen(false);
+          setError("");
+        }}
+        onConfirm={() => void performAction()}
+      />
     </PatientShell>
   );
 }

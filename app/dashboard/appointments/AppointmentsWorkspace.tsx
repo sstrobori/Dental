@@ -10,6 +10,8 @@ import { BackLink } from "./AppointmentNavigation";
 import { dayRangeManila, formatTime, todayManila } from "@/lib/today";
 import { getArrivalTiming } from "@/lib/queuePolicy";
 import { useVisitReasons } from "@/lib/useVisitReasons";
+import ConfirmationModal from "@/components/ConfirmationModal";
+import RequiredMark from "@/components/RequiredMark";
 
 
 type Status = "booked" | "confirmed" | "cancelled" | "arrived" | "completed" | "no_show";
@@ -25,6 +27,12 @@ const FIELD_CLASS = "min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white
 const SMALL_BUTTON = "min-h-11 rounded-xl border border-[#D8C5EC] bg-white px-3 py-2 text-xs font-semibold text-[#5A2E8A] transition hover:bg-[#F8F3FF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCAF4]";
 
 type DepositStatus = "none" | "required" | "received" | "refunded" | "forfeited" | "waived";
+type ConfirmationTarget =
+  | { kind: "late-arrival"; appointment: Appt; minutesAfterStart: number; grace: number }
+  | { kind: "status"; appointment: Appt; status: "cancelled" | "no_show" }
+  | { kind: "deposit"; appointment: Appt; depositStatus: Exclude<DepositStatus, "none" | "required"> }
+  | { kind: "waitlist"; patient: Wait };
+
 const DEPOSIT_LABEL: Record<DepositStatus, string> = {
   none: "", required: "waiting for payment", received: "received", refunded: "refunded", forfeited: "kept", waived: "waived",
 };
@@ -36,6 +44,81 @@ function depositHint(a: { deposit_status: DepositStatus; status: string; changed
   if (a.status === "completed") return "Visit done: refund it or apply it to the bill.";
   if (a.status === "cancelled") return "Cancelled early: refund the deposit.";
   return "";
+}
+
+function confirmationCopy(target: ConfirmationTarget) {
+  if (target.kind === "late-arrival") {
+    return {
+      title: `Check in ${target.appointment.name} late?`,
+      description: `${target.appointment.name} is ${target.minutesAfterStart} minutes late; the grace period is ${target.grace} minutes. They will be added at the back of the live queue, where staff can reposition them.`,
+      confirmLabel: "Check in at queue end",
+      cancelLabel: "Not yet",
+      busyLabel: "Checking in…",
+      tone: "warning" as const,
+    };
+  }
+  if (target.kind === "status") {
+    return target.status === "cancelled"
+      ? {
+          title: `Cancel ${target.appointment.name}’s appointment?`,
+          description: "The appointment will be closed as cancelled and will no longer appear as an upcoming visit.",
+          confirmLabel: "Cancel appointment",
+          cancelLabel: "Keep appointment",
+          busyLabel: "Cancelling…",
+          tone: "danger" as const,
+        }
+      : {
+          title: `Mark ${target.appointment.name} as a no-show?`,
+          description: "This closes the appointment as a no-show. Confirm only after checking that the patient did not arrive.",
+          confirmLabel: "Mark no-show",
+          cancelLabel: "Keep appointment",
+          busyLabel: "Updating…",
+          tone: "danger" as const,
+        };
+  }
+  if (target.kind === "waitlist") {
+    return {
+      title: `Remove ${target.patient.name} from the waitlist?`,
+      description: "They will no longer appear when staff look for patients to call about an open appointment time.",
+      confirmLabel: "Remove from waitlist",
+      cancelLabel: "Keep on waitlist",
+      busyLabel: "Removing…",
+      tone: "danger" as const,
+    };
+  }
+
+  const depositCopy = {
+    received: {
+      title: "Mark this deposit as received?",
+      description: `Confirm that the clinic received the ₱${target.appointment.deposit_amount} deposit from ${target.appointment.name}.`,
+      confirmLabel: "Mark received",
+      tone: "primary" as const,
+    },
+    waived: {
+      title: "Waive this deposit?",
+      description: `${target.appointment.name} will no longer be expected to pay the ₱${target.appointment.deposit_amount} deposit.`,
+      confirmLabel: "Waive deposit",
+      tone: "warning" as const,
+    },
+    forfeited: {
+      title: "Keep this deposit?",
+      description: `The ₱${target.appointment.deposit_amount} deposit will be recorded as kept by the clinic for ${target.appointment.name}.`,
+      confirmLabel: "Keep deposit",
+      tone: "warning" as const,
+    },
+    refunded: {
+      title: "Mark this deposit as refunded?",
+      description: `Confirm that the ₱${target.appointment.deposit_amount} deposit was returned to ${target.appointment.name}.`,
+      confirmLabel: "Mark refunded",
+      tone: "primary" as const,
+    },
+  }[target.depositStatus];
+
+  return {
+    ...depositCopy,
+    cancelLabel: "Go back",
+    busyLabel: "Updating…",
+  };
 }
 
 export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "book" | "all" }) {
@@ -53,6 +136,8 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [clock, setClock] = useState(0);
+  const [confirmation, setConfirmation] = useState<ConfirmationTarget | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   // staff booking form
   const [name, setName] = useState("");
@@ -128,33 +213,57 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
     if (status === "confirmed") patch.confirmed_at = new Date().toISOString();
     if (status === "cancelled") patch.cancelled_at = new Date().toISOString();
     const { error } = await supabase.from("appointments").update(patch).eq("id", id);
-    if (error) setError(error.message);
-    load();
+    if (error) {
+      setError(error.message);
+      return false;
+    }
+    await load();
+    return true;
   }
 
   async function setDeposit(id: string, deposit_status: DepositStatus) {
     setError("");
     const { error } = await supabase.from("appointments").update({ deposit_status }).eq("id", id);
-    if (error) setError(error.message);
-    load();
+    if (error) {
+      setError(error.message);
+      return false;
+    }
+    await load();
+    return true;
+  }
+
+  async function performArrival(appointment: Appt) {
+    setError(""); setNotice("");
+    const grace = settings?.grace_minutes ?? 15;
+    const timing = getArrivalTiming(appointment.starts_at, clock, grace);
+    const { data, error } = await supabase.rpc("mark_arrived", { p_appointment_id: appointment.id });
+    if (error) {
+      setError(error.message);
+      return false;
+    }
+    setNotice(
+      timing.window === "late"
+        ? `Late arrival checked in as #${data.queue_number} at the back of the queue. Use the live queue to put them next or move them later.`
+        : `Checked in and added to the queue as #${data.queue_number}.`,
+    );
+    await load();
+    return true;
   }
 
   async function arrived(appointment: Appt) {
     setError(""); setNotice("");
     const grace = settings?.grace_minutes ?? 15;
     const timing = getArrivalTiming(appointment.starts_at, clock, grace);
-    if (timing.window === "late" && !window.confirm(
-      `${appointment.name} is ${timing.minutesAfterStart} minutes late (the grace period is ${grace} minutes). ` +
-      "Check them in at the back of the live queue? You can reposition them from the queue board.",
-    )) return;
-    const { data, error } = await supabase.rpc("mark_arrived", { p_appointment_id: appointment.id });
-    if (error) return setError(error.message);
-    setNotice(
-      timing.window === "late"
-        ? `Late arrival checked in as #${data.queue_number} at the back of the queue. Use the live queue to put them next or move them later.`
-        : `Checked in and added to the queue as #${data.queue_number}.`,
-    );
-    load();
+    if (timing.window === "late") {
+      setConfirmation({
+        kind: "late-arrival",
+        appointment,
+        minutesAfterStart: timing.minutesAfterStart,
+        grace,
+      });
+      return;
+    }
+    await performArrival(appointment);
   }
 
   async function copyLink(id: string) {
@@ -195,6 +304,11 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
     document.getElementById("staff-booking-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function requestConfirmation(target: ConfirmationTarget) {
+    setError("");
+    setConfirmation(target);
+  }
+
   useEffect(() => {
     if (view !== "book" || waitlistFilled.current || !clinicId) return;
     const id = new URLSearchParams(window.location.search).get("waitlist");
@@ -202,16 +316,42 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
     const person = waitlist.find((w) => w.id === id);
     if (!person) return;
     waitlistFilled.current = true;
-    setName(person.name);
-    setPhone(person.phone ?? "");
-    setReason(person.reason ?? "");
-    setFromWaitlist(person.id);
-    setNotice(`Details for ${person.name} are filled in. Choose a time and book.`);
+    const kickoff = window.setTimeout(() => {
+      setName(person.name);
+      setPhone(person.phone ?? "");
+      setReason(person.reason ?? "");
+      setFromWaitlist(person.id);
+      setNotice(`Details for ${person.name} are filled in. Choose a time and book.`);
+    }, 0);
+    return () => window.clearTimeout(kickoff);
   }, [view, clinicId, waitlist]);
 
   async function removeWait(id: string) {
-    await supabase.from("waitlist").update({ status: "removed" }).eq("id", id);
-    load();
+    setError("");
+    const { error } = await supabase.from("waitlist").update({ status: "removed" }).eq("id", id);
+    if (error) {
+      setError(error.message);
+      return false;
+    }
+    await load();
+    return true;
+  }
+
+  async function confirmAction() {
+    const target = confirmation;
+    if (!target || confirmBusy) return;
+    setConfirmBusy(true);
+    setError("");
+    let succeeded = false;
+    try {
+      if (target.kind === "late-arrival") succeeded = await performArrival(target.appointment);
+      else if (target.kind === "status") succeeded = await setStatus(target.appointment.id, target.status);
+      else if (target.kind === "deposit") succeeded = await setDeposit(target.appointment.id, target.depositStatus);
+      else succeeded = await removeWait(target.patient.id);
+      if (succeeded) setConfirmation(null);
+    } finally {
+      setConfirmBusy(false);
+    }
   }
 
   const isToday = !!today && day === today;
@@ -287,14 +427,14 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
                           <span className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                             {a.deposit_status === "required" && (
                               <>
-                                <button type="button" onClick={() => setDeposit(a.id, "received")} className={SMALL_BUTTON}>Mark received</button>
-                                <button type="button" onClick={() => setDeposit(a.id, "waived")} className={SMALL_BUTTON}>Waive</button>
+                                <button type="button" onClick={() => requestConfirmation({ kind: "deposit", appointment: a, depositStatus: "received" })} className={SMALL_BUTTON}>Mark received</button>
+                                <button type="button" onClick={() => requestConfirmation({ kind: "deposit", appointment: a, depositStatus: "waived" })} className={SMALL_BUTTON}>Waive</button>
                               </>
                             )}
                             {a.deposit_status === "received" && (
                               <>
-                                <button type="button" onClick={() => setDeposit(a.id, "forfeited")} className={SMALL_BUTTON}>Keep deposit</button>
-                                <button type="button" onClick={() => setDeposit(a.id, "refunded")} className={SMALL_BUTTON}>Refunded</button>
+                                <button type="button" onClick={() => requestConfirmation({ kind: "deposit", appointment: a, depositStatus: "forfeited" })} className={SMALL_BUTTON}>Keep deposit</button>
+                                <button type="button" onClick={() => requestConfirmation({ kind: "deposit", appointment: a, depositStatus: "refunded" })} className={SMALL_BUTTON}>Refunded</button>
                               </>
                             )}
                           </span>
@@ -323,10 +463,10 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
                       {isToday && <button type="button" onClick={() => arrived(a)} className="min-h-11 rounded-xl bg-[#6D3AA8] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3]">
                         {arrivalTiming?.window === "late" ? "Check in late" : "Arrived"}
                       </button>}
-                      {a.status === "booked" && <button type="button" onClick={() => setStatus(a.id, "confirmed")} className={SMALL_BUTTON}>Mark confirmed</button>}
-                      {past && <button type="button" onClick={() => setStatus(a.id, "no_show")} className={SMALL_BUTTON}>No-show</button>}
+                      {a.status === "booked" && <button type="button" onClick={() => void setStatus(a.id, "confirmed")} className={SMALL_BUTTON}>Mark confirmed</button>}
+                      {past && <button type="button" onClick={() => requestConfirmation({ kind: "status", appointment: a, status: "no_show" })} className={SMALL_BUTTON}>No-show</button>}
                       <button type="button" onClick={() => copyLink(a.id)} className={SMALL_BUTTON}>Copy patient link</button>
-                      <button type="button" onClick={() => window.confirm("Cancel this appointment?") && setStatus(a.id, "cancelled")} className="min-h-11 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50">Cancel</button>
+                      <button type="button" onClick={() => requestConfirmation({ kind: "status", appointment: a, status: "cancelled" })} className="min-h-11 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50">Cancel</button>
                     </div>
                   )}
                 </li>
@@ -349,7 +489,7 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
                     </span>
                     <span className="flex flex-col gap-2 sm:flex-row">
                       <button type="button" onClick={() => fillFromWaitlist(w)} className={SMALL_BUTTON}>Book</button>
-                      <button type="button" onClick={() => removeWait(w.id)} className={SMALL_BUTTON}>Remove</button>
+                      <button type="button" onClick={() => requestConfirmation({ kind: "waitlist", patient: w })} className={SMALL_BUTTON}>Remove</button>
                     </span>
                   </li>
                 ))}
@@ -367,17 +507,17 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
           <p className="mt-1 text-sm text-[#6F647A]">Choose a free time and enter the patient&apos;s details.</p>
           {clinicId && (
             <form onSubmit={bookForPatient} className="mt-5 flex flex-col gap-4">
-              <fieldset>
-                <legend className="mb-2 text-sm font-semibold text-[#49365E]">Appointment time</legend>
+              <fieldset aria-required="true">
+                <legend className="mb-2 text-sm font-semibold text-[#49365E]">Appointment time <RequiredMark /></legend>
                 <SlotPicker key={pickerKey} clinicId={clinicId} value={slot} onChange={setSlot} ignoreNotice />
               </fieldset>
-              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">Patient name
-                <input className={FIELD_CLASS} placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]"><span>Patient name <RequiredMark /></span>
+                <input required className={FIELD_CLASS} placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
               </label>
-              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">Mobile number <span className="text-xs font-normal text-[#80748B]">Optional</span>
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]"><span>Mobile number <span className="text-xs font-normal text-[#80748B]">(optional)</span></span>
                 <input className={FIELD_CLASS} placeholder="e.g. 0917 123 4567" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
               </label>
-              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">Reason for visit
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]"><span>Reason for visit <span className="text-xs font-normal text-[#80748B]">(optional)</span></span>
                 <select className={FIELD_CLASS} value={reason} onChange={(e) => setReason(e.target.value)}>
                   <option value="">Select a reason</option>
                   {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -388,17 +528,39 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
                 Patient is a child under 18
               </label>
               {isMinor && (
-                <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">Parent or guardian
-                  <input className={FIELD_CLASS} placeholder="Full name" value={guardian} onChange={(e) => setGuardian(e.target.value)} />
+                <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]"><span>Parent or guardian <RequiredMark /></span>
+                  <input required className={FIELD_CLASS} placeholder="Full name" value={guardian} onChange={(e) => setGuardian(e.target.value)} />
                 </label>
               )}
-              <button className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3]">Book appointment</button>
+              <button type="submit" className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3]">Book appointment</button>
             </form>
           )}
         </section>
         )}
       </div>
       {view === "book" && <div className="mt-5 text-center"><Link href={`${rootPath}/scheduled`} className="text-sm font-semibold text-[#6D3AA8] underline-offset-4 hover:underline">View scheduled patients</Link></div>}
+      {confirmation && (() => {
+        const copy = confirmationCopy(confirmation);
+        return (
+          <ConfirmationModal
+            open
+            title={copy.title}
+            description={copy.description}
+            confirmLabel={copy.confirmLabel}
+            cancelLabel={copy.cancelLabel}
+            busy={confirmBusy}
+            busyLabel={copy.busyLabel}
+            tone={copy.tone}
+            error={error}
+            onCancel={() => {
+              if (confirmBusy) return;
+              setConfirmation(null);
+              setError("");
+            }}
+            onConfirm={() => void confirmAction()}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { estimateLabel } from "@/lib/today";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 type TicketProps = {
   entryId: string;
@@ -33,14 +34,10 @@ export default function QueueTicketCard({
   onLeft,
 }: TicketProps) {
   const supabase = useMemo(() => createClient(), []);
-  const dialogId = useId();
   const called = status === "called";
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState("");
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   // Keep the estimated-turn label and value in separate, aligned columns.
   // estimateLabel is also used by the registered patient dashboard.
@@ -52,41 +49,7 @@ export default function QueueTicketCard({
     if (leaving) return;
     setConfirmOpen(false);
     setLeaveError("");
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
   }
-
-  useEffect(() => {
-    if (!confirmOpen) return;
-    cancelRef.current?.focus();
-
-    const handleKeys = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !leaving) {
-        event.preventDefault();
-        setConfirmOpen(false);
-        setLeaveError("");
-        window.requestAnimationFrame(() => triggerRef.current?.focus());
-      }
-      if (event.key !== "Tab") return;
-      const buttons = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []
-      );
-      if (!buttons.length) {
-        event.preventDefault();
-        return;
-      }
-      const first = buttons[0];
-      const last = buttons[buttons.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeys);
-    return () => window.removeEventListener("keydown", handleKeys);
-  }, [confirmOpen, leaving]);
 
   async function confirmLeave() {
     if (leaving) return;
@@ -190,7 +153,6 @@ export default function QueueTicketCard({
               <p className="text-sm font-semibold text-[#6D3AA8]">Now serving #{nowServing}</p>
             )}
             <button
-              ref={triggerRef}
               type="button"
               onClick={() => { setLeaveError(""); setConfirmOpen(true); }}
               className="mt-2 min-h-11 rounded-xl border border-[#F0C4C8] bg-[#FFF0F1] px-5 py-2.5 text-sm font-semibold text-[#A73743] transition hover:bg-[#FFE1E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100"
@@ -201,59 +163,19 @@ export default function QueueTicketCard({
         )}
       </div>
 
-      {confirmOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#241334]/60 p-4 backdrop-blur-[2px]"
-          onMouseDown={(event) => { if (event.currentTarget === event.target) closeDialog(); }}
-        >
-          <div
-            ref={dialogRef}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby={`${dialogId}-title`}
-            aria-describedby={`${dialogId}-description`}
-            className="w-full max-w-md rounded-2xl border border-[#F2D7DA] bg-white p-5 text-left text-[#2E1747] shadow-[0_24px_70px_rgba(40,20,50,0.25)] sm:p-6"
-          >
-            <div className="mb-4 flex items-center gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF0F1] text-[#B5414D]" aria-hidden="true">
-                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 9v4M12 17h.01" />
-                  <path d="M10.3 3.8 2.2 18.2A1.9 1.9 0 0 0 3.9 21h16.2a1.9 1.9 0 0 0 1.7-2.8L13.7 3.8a1.9 1.9 0 0 0-3.4 0Z" />
-                </svg>
-              </div>
-              <h2 id={`${dialogId}-title`} className="text-xl font-bold leading-7">
-                Are you sure you want to leave the queue?
-              </h2>
-            </div>
-            <p id={`${dialogId}-description`} className="text-sm leading-6 text-[#756581]">
-              You will lose your current place in the queue. You will need to join again to get a new queue number.
-            </p>
-            {leaveError && (
-              <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{leaveError}</p>
-            )}
-            <div className="mt-6 grid grid-cols-2 gap-2">
-              <button
-                ref={cancelRef}
-                type="button"
-                disabled={leaving}
-                onClick={closeDialog}
-                className="min-h-11 rounded-xl border border-[#E2DCE8] bg-white px-4 py-2.5 text-sm font-semibold text-[#49365E] transition hover:bg-[#F8F7FB] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6] disabled:opacity-50"
-              >
-                Keep my place
-              </button>
-              <button
-                type="button"
-                disabled={leaving}
-                aria-busy={leaving}
-                onClick={() => void confirmLeave()}
-                className="min-h-11 rounded-xl bg-[#C74652] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#AC3642] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100 disabled:opacity-60"
-              >
-                {leaving ? "Leaving…" : "Yes, leave queue"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmationModal
+        open={confirmOpen}
+        title="Are you sure you want to leave the queue?"
+        description="You will lose your current place in the queue. You will need to join again to get a new queue number."
+        confirmLabel="Yes, leave queue"
+        cancelLabel="Keep my place"
+        busy={leaving}
+        busyLabel="Leaving…"
+        tone="danger"
+        error={leaveError}
+        onCancel={closeDialog}
+        onConfirm={() => void confirmLeave()}
+      />
     </>
   );
 }

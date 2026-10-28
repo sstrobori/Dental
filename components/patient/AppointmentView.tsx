@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import SlotPicker from "@/components/SlotPicker";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { formatDateTime } from "@/lib/today";
 import { downloadIcs, googleCalendarUrl, type CalEvent } from "@/lib/calendar";
 
@@ -50,6 +51,8 @@ export default function AppointmentView({
   const [moving, setMoving] = useState(false);
   const [newSlot, setNewSlot] = useState("");
   const [error, setError] = useState("");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc("appointment_status", { p_id: appointmentId });
@@ -74,9 +77,29 @@ export default function AppointmentView({
   function confirmAppt() { run("confirm_appointment", { p_id: appointmentId }); }
 
   function cancelAppt() {
-    const warning = appt?.late ? "\n\nThis is within 24 hours of your appointment, so the clinic will see it as a late change." : "";
-    if (!window.confirm(`Cancel this appointment?${warning}`)) return;
-    run("cancel_appointment", { p_id: appointmentId });
+    setError("");
+    setCancelOpen(true);
+  }
+
+  async function confirmCancellation() {
+    if (cancelling) return;
+    setCancelling(true);
+    setError("");
+    try {
+      const { error: cancelError } = await supabase.rpc("cancel_appointment", { p_id: appointmentId });
+      if (cancelError) {
+        setError(cancelError.message);
+        return;
+      }
+      setCancelOpen(false);
+      setMoving(false);
+      setNewSlot("");
+      await load();
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setCancelling(false);
+    }
   }
 
   function moveAppt() {
@@ -124,6 +147,7 @@ export default function AppointmentView({
       : "bg-[#F2EAFF] text-[#6D3AA8] ring-[#E4D5F6]";
 
   return (
+    <>
     <div className="flex flex-col gap-5 text-[#2E1747]">
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -211,5 +235,25 @@ export default function AppointmentView({
       )}
       <p className="text-center text-xs leading-5 text-[#7B6E88]">Bookmark this page so you can find your appointment later.</p>
     </div>
+    <ConfirmationModal
+      open={cancelOpen}
+      title="Cancel this appointment?"
+      description={appt.late
+        ? "This is within 24 hours of your appointment, so the clinic will see it as a late change. Your clinic's deposit rules may apply."
+        : "Your appointment will be cancelled. If you change your mind, you will need to book another available time."}
+      confirmLabel="Yes, cancel appointment"
+      cancelLabel="Keep appointment"
+      busy={cancelling}
+      busyLabel="Cancelling…"
+      tone="danger"
+      error={cancelOpen ? error : ""}
+      onCancel={() => {
+        if (cancelling) return;
+        setCancelOpen(false);
+        setError("");
+      }}
+      onConfirm={() => void confirmCancellation()}
+    />
+    </>
   );
 }

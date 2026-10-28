@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmationModal from "@/components/ConfirmationModal";
+import RequiredMark from "@/components/RequiredMark";
 
 type Reason = {
   id: string;
@@ -38,6 +40,7 @@ export default function VisitReasonSettings({ clinicId, isOwner }: { clinicId: s
   const [walkIn, setWalkIn] = useState(true);
   const [online, setOnline] = useState(true);
   const [active, setActive] = useState(true);
+  const [reasonToDelete, setReasonToDelete] = useState<Reason | null>(null);
 
   const load = useCallback(async () => {
     const [r, c] = await Promise.all([
@@ -110,9 +113,11 @@ export default function VisitReasonSettings({ clinicId, isOwner }: { clinicId: s
     );
   }
 
-  function remove(r: Reason) {
-    if (!window.confirm(`Delete "${r.name}"?\n\nPast visits and appointments keep the text. To just stop offering it, use Hide instead.`)) return;
-    return run(() => supabase.rpc("delete_visit_reason", { p_id: r.id }), `"${r.name}" deleted.`);
+  async function remove() {
+    if (!reasonToDelete) return;
+    const reason = reasonToDelete;
+    const ok = await run(() => supabase.rpc("delete_visit_reason", { p_id: reason.id }), `"${reason.name}" deleted.`);
+    if (ok) setReasonToDelete(null);
   }
 
   function saveRequire(next: boolean) {
@@ -162,8 +167,8 @@ export default function VisitReasonSettings({ clinicId, isOwner }: { clinicId: s
         {editing && (
           <form onSubmit={saveForm} className="mt-5 flex flex-col gap-4 rounded-2xl border border-[#CDB8E5] bg-[#FCFAFF] p-4">
             <h3 className="font-bold text-[#2E1747]">{editing === "new" ? "New reason" : "Edit reason"}</h3>
-            <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">Name
-              <input className={FIELD_CLASS} maxLength={40} placeholder="Example: Tooth extraction" value={name} onChange={(e) => setName(e.target.value)} />
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]"><span>Name <RequiredMark /></span>
+              <input required className={FIELD_CLASS} maxLength={40} placeholder="Example: Tooth extraction" value={name} onChange={(e) => setName(e.target.value)} />
             </label>
             <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">Note for patients <span className="text-xs font-normal text-[#80748B]">Optional, shown when they pick this reason</span>
               <textarea className={`${FIELD_CLASS} min-h-24 resize-y`} rows={3} maxLength={200}
@@ -216,7 +221,7 @@ export default function VisitReasonSettings({ clinicId, isOwner }: { clinicId: s
                       onClick={() => run(() => supabase.rpc("move_visit_reason", { p_id: r.id, p_direction: "down" }))} className={SMALL_BUTTON}>↓</button>
                     <button type="button" disabled={!isOwner || busy} onClick={() => openEdit(r)} className={SMALL_BUTTON}>Edit</button>
                     <button type="button" disabled={!isOwner || busy} onClick={() => toggleActive(r)} className={SMALL_BUTTON}>{r.active ? "Hide" : "Show"}</button>
-                    <button type="button" disabled={!isOwner || busy} onClick={() => remove(r)}
+                    <button type="button" disabled={!isOwner || busy} onClick={() => { setError(""); setReasonToDelete(r); }}
                       className="min-h-10 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-40">Delete</button>
                   </div>
                 </div>
@@ -244,6 +249,21 @@ export default function VisitReasonSettings({ clinicId, isOwner }: { clinicId: s
       <p className="text-xs leading-5 text-[#80748B]">
         Renaming a reason updates the deposit rule that uses it. Past visits and appointments keep the reason they were saved with.
       </p>
+      <ConfirmationModal
+        open={!!reasonToDelete}
+        title={`Delete “${reasonToDelete?.name ?? "this reason"}”?`}
+        description="Past visits and appointments will keep the saved text, but this reason will be removed from the clinic’s list. If you only want to stop offering it, choose Hide instead."
+        confirmLabel="Delete reason"
+        cancelLabel="Keep reason"
+        busy={busy}
+        busyLabel="Deleting…"
+        tone="danger"
+        error={reasonToDelete ? error : ""}
+        onCancel={() => {
+          if (!busy) setReasonToDelete(null);
+        }}
+        onConfirm={() => void remove()}
+      />
     </div>
   );
 }

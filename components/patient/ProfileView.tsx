@@ -9,6 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 type Profile = {
   patient_id: string;
@@ -36,6 +37,11 @@ export default function ProfileView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState<{
+    id: string;
+    person: string;
+    pending: boolean;
+  } | null>(null);
 
   // LOAD LINKED PROFILES
 
@@ -56,39 +62,41 @@ export default function ProfileView({
   }, [supabase]);
 
   useEffect(() => {
-    void load();
+    const kickoff = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(kickoff);
   }, [load]);
 
   // REMOVE OR CANCEL A LINKED PROFILE
 
-  async function unlink(id: string, pending: boolean) {
-    const message = pending
-      ? "Cancel this request?"
-      : "Remove this person from your account? Their visits will stop appearing in your history.";
-
-    if (!window.confirm(message)) return;
-
+  async function confirmUnlink() {
+    const target = confirmTarget;
+    if (!target || busyId) return;
     setError("");
-    setBusyId(id);
+    setBusyId(target.id);
+    try {
+      const { error: unlinkError } = await supabase.rpc(
+        "unlink_profile",
+        {
+          p_patient_id: target.id,
+        }
+      );
 
-    const { error: unlinkError } = await supabase.rpc(
-      "unlink_profile",
-      {
-        p_patient_id: id,
+      if (unlinkError) {
+        setError(unlinkError.message);
+        return;
       }
-    );
 
-    setBusyId("");
-
-    if (unlinkError) {
-      setError(unlinkError.message);
-      return;
+      setConfirmTarget(null);
+      await load();
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setBusyId("");
     }
-
-    await load();
   }
 
   return (
+    <>
     <div className="flex w-full flex-col gap-5 text-[#2E1747] sm:gap-6">
 
       {/* PROFILE PAGE HEADER */}
@@ -270,12 +278,14 @@ export default function ProfileView({
                 <button
                   type="button"
                   disabled={busyId !== ""}
-                  onClick={() =>
-                    void unlink(
-                      profile.patient_id,
-                      profile.link_status === "pending"
-                    )
-                  }
+                  onClick={() => {
+                    setError("");
+                    setConfirmTarget({
+                      id: profile.patient_id,
+                      person: profile.person,
+                      pending: profile.link_status === "pending",
+                    });
+                  }}
                   className="min-h-11 w-full shrink-0 rounded-xl border border-[#D7C4EA] bg-white px-4 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {busyId === profile.patient_id
@@ -321,5 +331,25 @@ export default function ProfileView({
 </div>
 
     </div>
+    <ConfirmationModal
+      open={confirmTarget !== null}
+      title={confirmTarget?.pending ? "Cancel this link request?" : `Remove ${confirmTarget?.person ?? "this person"}?`}
+      description={confirmTarget?.pending
+        ? "The pending request will be cancelled. You can request this profile link again later."
+        : "This person will be removed from your account, and their visits will stop appearing in your history."}
+      confirmLabel={confirmTarget?.pending ? "Yes, cancel request" : "Yes, remove profile"}
+      cancelLabel={confirmTarget?.pending ? "Keep request" : "Keep profile"}
+      busy={busyId !== ""}
+      busyLabel="Updating…"
+      tone={confirmTarget?.pending ? "warning" : "danger"}
+      error={confirmTarget ? error : ""}
+      onCancel={() => {
+        if (busyId) return;
+        setConfirmTarget(null);
+        setError("");
+      }}
+      onConfirm={() => void confirmUnlink()}
+    />
+    </>
   );
 }

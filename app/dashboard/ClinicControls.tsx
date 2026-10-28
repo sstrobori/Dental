@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 export default function ClinicControls({
   clinicId,
@@ -16,6 +17,7 @@ export default function ClinicControls({
   const [open, setOpen] = useState(acceptingJoins);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmPause, setConfirmPause] = useState(false);
 
   async function toggle() {
     setError("");
@@ -39,9 +41,16 @@ export default function ClinicControls({
     }
 
     setOpen(next);
+    setConfirmPause(false);
+  }
+
+  function requestPause() {
+    setError("");
+    setConfirmPause(true);
   }
 
   return (
+    <>
     <div className="flex flex-col gap-3 border-t border-[#E4D5F6] bg-[#FAF8FF] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:px-6">
       <div className="flex min-w-0 items-start gap-3">
         <span
@@ -95,7 +104,7 @@ export default function ClinicControls({
 
       <button
         type="button"
-        onClick={toggle}
+        onClick={() => open ? requestPause() : void toggle()}
         disabled={busy}
         aria-pressed={open}
         aria-busy={busy}
@@ -111,5 +120,24 @@ export default function ClinicControls({
             : "Resume online joining"}
       </button>
     </div>
+    <ConfirmationModal
+      open={confirmPause}
+      title="Pause online queue joining?"
+      description="New patients will not be able to join the live queue from the clinic link until a staff member resumes online joining. Existing queue entries are not affected."
+      confirmLabel="Pause online joining"
+      cancelLabel="Keep queue open"
+      busy={busy}
+      busyLabel="Pausing…"
+      tone="warning"
+      error={error}
+      onCancel={() => {
+        if (!busy) {
+          setConfirmPause(false);
+          setError("");
+        }
+      }}
+      onConfirm={() => void toggle()}
+    />
+    </>
   );
 }

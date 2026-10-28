@@ -1,6 +1,8 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import ConfirmationModal from "@/components/ConfirmationModal";
+import RequiredMark from "@/components/RequiredMark";
 import { createClient } from "@/lib/supabase/client";
 import { formatTime, startOfTodayManila } from "@/lib/today";
 import { getArrivalTiming } from "@/lib/queuePolicy";
@@ -136,10 +138,6 @@ export default function QueueBoard({
   const [adding, setAdding] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
-  const dialogId = useId();
-  const confirmTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
-  const confirmDialogRef = useRef<HTMLDivElement | null>(null);
   const { names: REASONS } = useVisitReasons(clinicId, "staff");
   useEffect(() => {
     const kickoff = window.setTimeout(() => setOrigin(window.location.origin), 0);
@@ -211,9 +209,8 @@ export default function QueueBoard({
       supabase.removeChannel(channel);
     };
   }, [supabase, clinicId, refresh]);
-  function requestConfirmation(kind: ConfirmAction, entry: Entry, trigger: HTMLButtonElement) {
+  function requestConfirmation(kind: ConfirmAction, entry: Entry) {
     if (pendingId || confirmBusy || syncState === "offline") return;
-    confirmTriggerRef.current = trigger;
     setConfirmTarget({
       kind,
       entryId: entry.id,
@@ -225,38 +222,7 @@ export default function QueueBoard({
   function closeConfirmation() {
     if (confirmBusy) return;
     setConfirmTarget(null);
-    window.requestAnimationFrame(() => confirmTriggerRef.current?.focus());
   }
-  useEffect(() => {
-    if (!confirmTarget) return;
-    confirmCancelRef.current?.focus();
-    const handleKeys = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !confirmBusy) {
-        event.preventDefault();
-        setConfirmTarget(null);
-        window.requestAnimationFrame(() => confirmTriggerRef.current?.focus());
-      }
-      if (event.key !== "Tab") return;
-      const buttons = Array.from(
-        confirmDialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []
-      );
-      if (!buttons.length) {
-        event.preventDefault();
-        return;
-      }
-      const first = buttons[0];
-      const last = buttons[buttons.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeys);
-    return () => document.removeEventListener("keydown", handleKeys);
-  }, [confirmTarget, confirmBusy]);
   async function confirmAction() {
     const target = confirmTarget;
     if (!target || confirmBusy || pendingId) return;
@@ -290,7 +256,6 @@ export default function QueueBoard({
     } finally {
       setConfirmBusy(false);
       setConfirmTarget(null);
-      window.requestAnimationFrame(() => confirmTriggerRef.current?.focus());
     }
   }
   async function setStatus(id: string, status: Status) {
@@ -479,7 +444,7 @@ export default function QueueBoard({
     e.called_at ? [(new Date(e.called_at).getTime() - new Date(e.created_at).getTime()) / 60000] : []
   );
   const avgWait = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
-  const joinUrl = `${origin}/c/${clinicId}`;
+  const joinUrl = `${origin}/guest/${clinicId}`;
   const displayUrl = `${origin}/display/${clinicId}`;
   return (
     <div className="mx-4 mt-6 flex flex-col gap-5 text-[#2E1747] sm:mx-6 sm:mt-8 sm:gap-6 lg:mx-8">
@@ -497,7 +462,7 @@ export default function QueueBoard({
         </div>
         <button
           type="button"
-          onClick={(event) => next && requestConfirmation("call", next, event.currentTarget)}
+          onClick={() => next && requestConfirmation("call", next)}
           disabled={
             !next ||
             !!pendingId ||
@@ -575,7 +540,7 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                     <button
                       type="button"
                       disabled={!!pendingId || syncState === "offline"}
-                      onClick={(event) => requestConfirmation("served", e, event.currentTarget)}
+                      onClick={() => requestConfirmation("served", e)}
                       className="min-h-11 rounded-xl bg-[#32965F] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#287F50] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100 disabled:opacity-45"
                     >
                       {pendingId === e.id ? "Saving…" : "Mark served"}
@@ -585,14 +550,14 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                       <button
                         type="button"
                         disabled={!!pendingId || syncState === "offline"}
-                        onClick={(event) => requestConfirmation("arrived", e, event.currentTarget)}
+                        onClick={() => requestConfirmation("arrived", e)}
                         className="min-h-11 rounded-xl border border-[#5EEAD4] bg-[#CCFBF1] px-3 py-2 text-sm font-bold text-[#0F766E] transition hover:bg-[#99F6E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#CCFBF1] disabled:opacity-45"                      >
                         {pendingId === e.id ? "Confirming…" : "Patient arrived"}
                       </button>
                       <button
                         type="button"
                         disabled={!!pendingId || syncState === "offline"}
-                        onClick={(event) => requestConfirmation("no_show", e, event.currentTarget)}
+                        onClick={() => requestConfirmation("no_show", e)}
                         className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] disabled:opacity-45"
                       >
                         No-show
@@ -636,7 +601,7 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                     <button
                       type="button"
                       disabled={!!pendingId || syncState === "offline"}
-                      onClick={(event) => requestConfirmation("call", e, event.currentTarget)}
+                      onClick={() => requestConfirmation("call", e)}
                       className="min-h-11 rounded-xl border border-[#93C5FD] bg-[#DBEAFE] px-4 py-2 text-sm font-bold text-[#1D4ED8] transition hover:bg-[#BFDBFE] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DBEAFE] disabled:opacity-45" >
                       Call
                     </button>
@@ -644,7 +609,7 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                       <button
                         type="button"
                         disabled={!!pendingId || syncState === "offline"}
-                        onClick={(event) => requestConfirmation("move_end", e, event.currentTarget)}
+                        onClick={() => requestConfirmation("move_end", e)}
                         className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45"
                       >
                         Move to back
@@ -653,7 +618,7 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                     <button
                       type="button"
                       disabled={!!pendingId || syncState === "offline"}
-                      onClick={(event) => requestConfirmation("skip", e, event.currentTarget)}
+                      onClick={() => requestConfirmation("skip", e)}
                       className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] disabled:opacity-45"
                     >
                       {e.appointment_id ? "Hold" : "Skip"}
@@ -675,9 +640,9 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                     </span>
                     <span className="grid shrink-0 grid-cols-2 gap-2">
                       {e.appointment_id && (
-                        <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={(event) => requestConfirmation("move_next", e, event.currentTarget)} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Put next</button>
+                        <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={() => requestConfirmation("move_next", e)} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Put next</button>
                       )}
-                      <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={(event) => requestConfirmation("move_end", e, event.currentTarget)} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Back to end</button>
+                      <button type="button" disabled={!!pendingId || syncState === "offline"} onClick={() => requestConfirmation("move_end", e)} className="min-h-11 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5C327F] disabled:opacity-45">Back to end</button>
                     </span>
                   </li>
                 ))}
@@ -691,8 +656,8 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
           <p className="mt-1 text-sm text-[#756581]">Create a queue ticket for a patient at the counter.</p>
           <form onSubmit={addWalkIn} className="mt-5 flex flex-col gap-4">
             <div>
-              <label htmlFor="walkin-name" className="mb-1.5 block text-sm font-semibold">Patient name</label>
-              <input id="walkin-name" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+              <label htmlFor="walkin-name" className="mb-1.5 block text-sm font-semibold">Patient name <RequiredMark /></label>
+              <input id="walkin-name" required className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div>
               <label
@@ -731,8 +696,8 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
             </label>
             {isMinor && (
               <div>
-                <label htmlFor="walkin-guardian" className="mb-1.5 block text-sm font-semibold">Parent or guardian</label>
-                <input id="walkin-guardian" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={guardian} onChange={(e) => setGuardian(e.target.value)} />
+                <label htmlFor="walkin-guardian" className="mb-1.5 block text-sm font-semibold">Parent or guardian <RequiredMark /></label>
+                <input id="walkin-guardian" required className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={guardian} onChange={(e) => setGuardian(e.target.value)} />
               </div>
             )}
             <button disabled={adding || syncState === "offline"} aria-busy={adding} className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 font-bold text-white transition hover:bg-[#572C87] disabled:cursor-not-allowed disabled:opacity-45">
@@ -743,65 +708,18 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
       </div>
       {confirmTarget && (() => {
         const copy = confirmationCopy(confirmTarget);
-        const actionStyle = {
-          blue: "border-[#93C5FD] bg-[#DBEAFE] text-[#1D4ED8] hover:bg-[#BFDBFE]",
-          teal: "border-[#5EEAD4] bg-[#CCFBF1] text-[#0F766E] hover:bg-[#99F6E4]",
-          green: "border-[#32965F] bg-[#32965F] text-white hover:bg-[#287F50]",
-          red: "border-[#C74652] bg-[#C74652] text-white hover:bg-[#AC3642]",
-          amber: "border-[#F4CC85] bg-[#FFF2D8] text-[#92400E] hover:bg-[#FDE7BD]",
-          purple: "border-[#C5ACE6] bg-[#F2EAFF] text-[#6D3AA8] hover:bg-[#E7D8FB]",
-        }[copy.tone];
         return (
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-[#241334]/60 p-4 backdrop-blur-[2px]"
-            onMouseDown={(event) => {
-              if (event.currentTarget === event.target) closeConfirmation();
-            }}
-          >
-            <div
-              ref={confirmDialogRef}
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby={`${dialogId}-title`}
-              aria-describedby={`${dialogId}-description`}
-              className="w-full max-w-md rounded-2xl border border-[#E4D5F6] bg-white p-5 text-left text-[#2E1747] shadow-[0_24px_70px_rgba(40,20,50,0.25)] sm:p-6"
-            >
-              <div className="mb-4 flex items-center gap-3">
-                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#F2EAFF] text-[#6D3AA8]" aria-hidden="true">
-                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 11v5M12 8h.01" />
-                  </svg>
-                </div>
-                <h2 id={`${dialogId}-title`} className="text-xl font-bold leading-7">
-                  {copy.title}
-                </h2>
-              </div>
-              <p id={`${dialogId}-description`} className="text-sm leading-6 text-[#756581]">
-                {copy.message}
-              </p>
-              <div className="mt-6 grid grid-cols-2 gap-2">
-                <button
-                  ref={confirmCancelRef}
-                  type="button"
-                  disabled={confirmBusy}
-                  onClick={closeConfirmation}
-                  className="min-h-11 rounded-xl border border-[#E2DCE8] bg-white px-3 py-2.5 text-sm font-semibold text-[#49365E] transition hover:bg-[#F8F7FB] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6] disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={confirmBusy}
-                  aria-busy={confirmBusy}
-                  onClick={() => void confirmAction()}
-                  className={`min-h-11 rounded-xl border px-3 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6] disabled:opacity-50 ${actionStyle}`}
-                >
-                  {confirmBusy ? "Updating…" : copy.confirmLabel}
-                </button>
-              </div>
-            </div>
-          </div>
+          <ConfirmationModal
+            open
+            title={copy.title}
+            description={copy.message}
+            confirmLabel={copy.confirmLabel}
+            busy={confirmBusy}
+            busyLabel="Updating…"
+            tone={copy.tone === "red" ? "danger" : copy.tone === "amber" ? "warning" : "primary"}
+            onCancel={closeConfirmation}
+            onConfirm={() => void confirmAction()}
+          />
         );
       })()}
     </div>

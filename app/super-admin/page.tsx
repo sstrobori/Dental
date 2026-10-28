@@ -1,6 +1,8 @@
 "use client";
 
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
+import ConfirmationModal from "@/components/ConfirmationModal";
+import RequiredMark from "@/components/RequiredMark";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -49,9 +51,6 @@ const buttonClass =
   "min-h-10 rounded-xl border border-[#D7C4EA] bg-white px-3 py-2 text-sm font-semibold text-[#6D3AA8] transition hover:bg-[#F2EAFF] disabled:cursor-not-allowed disabled:opacity-50";
 const primaryClass =
   "min-h-11 rounded-xl bg-[#6D3AA8] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E4D5F6] disabled:cursor-not-allowed disabled:opacity-50";
-const dangerClass =
-  "min-h-11 rounded-xl bg-[#C74652] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#AC3642] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100 disabled:cursor-not-allowed disabled:opacity-50";
-
 function statusStyle(status: string) {
   if (status === "active" || status === "approved") return "bg-emerald-50 text-emerald-700";
   if (status === "suspended" || status === "rejected") return "bg-red-50 text-red-700";
@@ -258,9 +257,6 @@ export default function SuperAdminPage() {
   useEffect(() => {
     if (modal?.kind !== "view-staff") return;
     let cancelled = false;
-    setStaff([]);
-    setStaffError("");
-    setStaffLoading(true);
 
     async function loadStaff() {
       if (modal?.kind !== "view-staff") return;
@@ -277,8 +273,16 @@ export default function SuperAdminPage() {
       setStaff((data ?? []) as ClinicStaff[]);
     }
 
-    void loadStaff();
-    return () => { cancelled = true; };
+    const kickoff = window.setTimeout(() => {
+      setStaff([]);
+      setStaffError("");
+      setStaffLoading(true);
+      void loadStaff();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(kickoff);
+    };
   }, [modal, supabase]);
 
   const filtered = clinics.filter((clinic) => {
@@ -429,9 +433,6 @@ export default function SuperAdminPage() {
     );
   }
 
-  const modalDanger = modal?.kind === "confirm-clinic-status" && modal.nextStatus === "suspended"
-    || modal?.kind === "confirm-request-status" && modal.nextStatus === "rejected";
-
   return (
     <SuperAdminShell email={email} activeTab={tab} onTabChange={setTab}>
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
@@ -565,29 +566,20 @@ export default function SuperAdminPage() {
         </p>
       </div>
 
-      {modal && (
+      {modal && (modal.kind === "view-staff" || modal.kind === "add-request" || modal.kind === "edit-contact") && (
         <Dialog
           key={modal.kind}
           title={
             modal.kind === "view-staff" ? `Staff at ${modal.clinic.clinic_name}`
               : modal.kind === "add-request" ? "Add a partner request"
-              : modal.kind === "confirm-add" ? "Confirm new partner request"
-              : modal.kind === "edit-contact" ? "Edit clinic contact"
-              : modal.kind === "confirm-contact" ? "Confirm contact update"
-              : modal.kind === "confirm-clinic-status" ? `Mark clinic ${modal.nextStatus}?`
-              : `Mark request ${modal.nextStatus}?`
+              : "Edit clinic contact"
           }
           description={
             modal.kind === "view-staff" ? "Names and email addresses of staff assigned to this clinic."
               : modal.kind === "add-request" ? "Record a prospective clinic for onboarding."
-              : modal.kind === "confirm-add" ? "Please review the details before saving this request."
-              : modal.kind === "edit-contact" ? `Update the contact email for ${modal.clinic.clinic_name}.`
-              : modal.kind === "confirm-contact" ? "Please review the email address before saving."
-              : modal.kind === "confirm-clinic-status" ? `Confirm the status change for ${modal.clinic.clinic_name}.`
-              : `Confirm the request status for ${modal.request.clinic_name}.`
+              : `Update the contact email for ${modal.clinic.clinic_name}.`
           }
           busy={!!busy}
-          danger={modalDanger}
           onClose={closeModal}
         >
           {modal.kind === "view-staff" && (
@@ -643,11 +635,11 @@ export default function SuperAdminPage() {
           {modal.kind === "add-request" && (
             <form onSubmit={submitAddRequest} className="mt-5 flex flex-col gap-4">
               <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">
-                Clinic name
+                <span>Clinic name <RequiredMark /></span>
                 <input required minLength={2} maxLength={120} className={inputClass} value={requestName} onChange={(event) => setRequestName(event.target.value)} placeholder="Example Dental Clinic" />
               </label>
               <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">
-                Contact email
+                <span>Contact email <RequiredMark /></span>
                 <input required type="email" maxLength={254} className={inputClass} value={requestEmail} onChange={(event) => setRequestEmail(event.target.value)} placeholder="owner@example.com" />
               </label>
               <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">
@@ -680,96 +672,135 @@ export default function SuperAdminPage() {
             </form>
           )}
 
-          {modal.kind === "confirm-add" && (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
-                <p className="font-bold text-[#2E1747]">{modal.request.name}</p>
-                <p className="mt-1 break-all text-[#756581]">{modal.request.email}</p>
-                {modal.request.notes && <p className="mt-2 whitespace-pre-wrap text-[#756581]">{modal.request.notes}</p>}
-              </div>
-              <p className="text-sm text-[#756581]">Are you sure you want to save this onboarding request? This does not activate a clinic account.</p>
-              {modalError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{modalError}</p>}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className={buttonClass} disabled={!!busy} onClick={() => showModal({ kind: "add-request" })}>Back to edit</button>
-                <button type="button" className={primaryClass} disabled={!!busy} onClick={() => void confirmAction()}>{busy ? "Saving…" : "Yes, save request"}</button>
-              </div>
-            </div>
-          )}
+        </Dialog>
+      )}
 
-          {modal.kind === "confirm-contact" && (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
-                <p className="font-bold text-[#2E1747]">{modal.clinic.clinic_name}</p>
-                <p className="mt-2 text-[#756581]">Current: {modal.clinic.contact_email || "Not provided"}</p>
-                <p className="mt-1 font-semibold text-[#2E1747]">New: {modal.nextEmail || "Remove contact email"}</p>
-              </div>
-              <p className="text-sm text-[#756581]">Are you sure you want to save this contact change?</p>
-              {modalError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{modalError}</p>}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className={buttonClass} disabled={!!busy} onClick={() => showModal({ kind: "edit-contact", clinic: modal.clinic })}>Back to edit</button>
-                <button type="button" className={primaryClass} disabled={!!busy} onClick={() => void confirmAction()}>{busy ? "Saving…" : "Yes, save change"}</button>
-              </div>
-            </div>
-          )}
+      {modal?.kind === "confirm-add" && (
+        <ConfirmationModal
+          open
+          title="Confirm new partner request"
+          description={
+            <>
+              <span>Please review the details before saving this request.</span>
+              <span className="mt-2 block">Are you sure you want to save this onboarding request? This does not activate a clinic account.</span>
+            </>
+          }
+          confirmLabel="Yes, save request"
+          cancelLabel="Back to edit"
+          busy={!!busy}
+          busyLabel="Saving…"
+          error={modalError}
+          onCancel={() => showModal({ kind: "add-request" })}
+          onConfirm={() => void confirmAction()}
+        >
+          <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
+            <p className="font-bold text-[#2E1747]">{modal.request.name}</p>
+            <p className="mt-1 break-all text-[#756581]">{modal.request.email}</p>
+            {modal.request.notes && <p className="mt-2 whitespace-pre-wrap text-[#756581]">{modal.request.notes}</p>}
+          </div>
+        </ConfirmationModal>
+      )}
 
-          {modal.kind === "confirm-clinic-status" && (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
-                <p className="font-bold text-[#2E1747]">{modal.clinic.clinic_name}</p>
-                <p className="mt-2 text-[#756581]">Current status: <span className="font-semibold capitalize">{modal.clinic.status}</span></p>
-                <p className="mt-1 text-[#2E1747]">New status: <span className="font-bold capitalize">{modal.nextStatus}</span></p>
-              </div>
-              {modal.nextStatus === "suspended" && (
-                <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">
-                  Suspension reason <span className="text-xs font-normal text-[#80748B]">(required, at least 5 characters)</span>
-                  <textarea
-                    required
-                    minLength={5}
-                    maxLength={1000}
-                    rows={3}
-                    className={inputClass}
-                    value={suspensionNote}
-                    onChange={(event) => { setSuspensionNote(event.target.value); setModalError(""); }}
-                    placeholder="Explain why the clinic is being suspended"
-                  />
-                </label>
-              )}
-              <p className="text-sm leading-6 text-[#756581]">
+      {modal?.kind === "confirm-contact" && (
+        <ConfirmationModal
+          open
+          title="Confirm contact update"
+          description={
+            <>
+              <span>Please review the email address before saving.</span>
+              <span className="mt-2 block">Are you sure you want to save this contact change?</span>
+            </>
+          }
+          confirmLabel="Yes, save change"
+          cancelLabel="Back to edit"
+          busy={!!busy}
+          busyLabel="Saving…"
+          error={modalError}
+          onCancel={() => showModal({ kind: "edit-contact", clinic: modal.clinic })}
+          onConfirm={() => void confirmAction()}
+        >
+          <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
+            <p className="font-bold text-[#2E1747]">{modal.clinic.clinic_name}</p>
+            <p className="mt-2 text-[#756581]">Current: {modal.clinic.contact_email || "Not provided"}</p>
+            <p className="mt-1 font-semibold text-[#2E1747]">New: {modal.nextEmail || "Remove contact email"}</p>
+          </div>
+        </ConfirmationModal>
+      )}
+
+      {modal?.kind === "confirm-clinic-status" && (
+        <ConfirmationModal
+          open
+          title={`Mark clinic ${modal.nextStatus}?`}
+          description={
+            <>
+              <span>Confirm the status change for {modal.clinic.clinic_name}.</span>
+              <span className="mt-2 block">
                 {modal.nextStatus === "active"
                   ? "Are you sure you want to activate this clinic?"
                   : modal.nextStatus === "pending"
                     ? "Are you sure you want to mark this clinic pending?"
                     : "Are you sure you want to suspend this clinic?"}
                 {" "}Access restrictions depend on the companion Supabase enforcement migration and other RPC/policy checks.
-              </p>
-              {modalError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{modalError}</p>}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className={buttonClass} disabled={!!busy} onClick={closeModal}>Cancel</button>
-                <button type="button" className={modal.nextStatus === "suspended" ? dangerClass : primaryClass} disabled={!!busy} onClick={() => void confirmAction()}>
-                  {busy ? "Saving…" : `Yes, mark ${modal.nextStatus}`}
-                </button>
-              </div>
+              </span>
+            </>
+          }
+          confirmLabel={`Yes, mark ${modal.nextStatus}`}
+          busy={!!busy}
+          busyLabel="Saving…"
+          tone={modal.nextStatus === "suspended" ? "danger" : "primary"}
+          error={modalError}
+          onCancel={closeModal}
+          onConfirm={() => void confirmAction()}
+        >
+          <div className="space-y-4">
+            <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
+              <p className="font-bold text-[#2E1747]">{modal.clinic.clinic_name}</p>
+              <p className="mt-2 text-[#756581]">Current status: <span className="font-semibold capitalize">{modal.clinic.status}</span></p>
+              <p className="mt-1 text-[#2E1747]">New status: <span className="font-bold capitalize">{modal.nextStatus}</span></p>
             </div>
-          )}
+            {modal.nextStatus === "suspended" && (
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">
+                <span>Suspension reason <RequiredMark /> <span className="text-xs font-normal text-[#80748B]">(at least 5 characters)</span></span>
+                <textarea
+                  required
+                  minLength={5}
+                  maxLength={1000}
+                  rows={3}
+                  className={inputClass}
+                  value={suspensionNote}
+                  onChange={(event) => { setSuspensionNote(event.target.value); setModalError(""); }}
+                  placeholder="Explain why the clinic is being suspended"
+                />
+              </label>
+            )}
+          </div>
+        </ConfirmationModal>
+      )}
 
-          {modal.kind === "confirm-request-status" && (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
-                <p className="font-bold text-[#2E1747]">{modal.request.clinic_name}</p>
-                <p className="mt-2 text-[#756581]">Current request status: <span className="font-semibold capitalize">{modal.request.status}</span></p>
-                <p className="mt-1 text-[#2E1747]">New status: <span className="font-bold capitalize">{modal.nextStatus}</span></p>
-              </div>
-              <p className="text-sm leading-6 text-[#756581]">Are you sure you want to change this onboarding request? Approval alone does not create or activate a clinic account.</p>
-              {modalError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{modalError}</p>}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className={buttonClass} disabled={!!busy} onClick={closeModal}>Cancel</button>
-                <button type="button" className={modal.nextStatus === "rejected" ? dangerClass : primaryClass} disabled={!!busy} onClick={() => void confirmAction()}>
-                  {busy ? "Saving…" : `Yes, mark ${modal.nextStatus}`}
-                </button>
-              </div>
-            </div>
-          )}
-        </Dialog>
+      {modal?.kind === "confirm-request-status" && (
+        <ConfirmationModal
+          open
+          title={`Mark request ${modal.nextStatus}?`}
+          description={
+            <>
+              <span>Confirm the request status for {modal.request.clinic_name}.</span>
+              <span className="mt-2 block">Are you sure you want to change this onboarding request? Approval alone does not create or activate a clinic account.</span>
+            </>
+          }
+          confirmLabel={`Yes, mark ${modal.nextStatus}`}
+          busy={!!busy}
+          busyLabel="Saving…"
+          tone={modal.nextStatus === "rejected" ? "danger" : "primary"}
+          error={modalError}
+          onCancel={closeModal}
+          onConfirm={() => void confirmAction()}
+        >
+          <div className="rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-4 text-sm">
+            <p className="font-bold text-[#2E1747]">{modal.request.clinic_name}</p>
+            <p className="mt-2 text-[#756581]">Current request status: <span className="font-semibold capitalize">{modal.request.status}</span></p>
+            <p className="mt-1 text-[#2E1747]">New status: <span className="font-bold capitalize">{modal.nextStatus}</span></p>
+          </div>
+        </ConfirmationModal>
       )}
     </SuperAdminShell>
   );

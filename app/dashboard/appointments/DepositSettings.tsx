@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useVisitReasons } from "@/lib/useVisitReasons";
+import RequiredMark from "@/components/RequiredMark";
 
 
 const FIELD_CLASS = "min-h-11 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm text-[#2E1747] outline-none transition placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]";
@@ -67,13 +68,13 @@ export default function DepositSettings({ clinicId, isOwner }: { clinicId: strin
           Payments happen directly between the patient and clinic. Staff only record whether a deposit was received.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Deposit amount
+          <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Deposit amount <RequiredMark /></span>
             <span className="text-xs font-normal text-[#80748B]">Philippine pesos; enter 0 for none</span>
-            <input type="number" min={0} className={FIELD_CLASS} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+            <input type="number" required min={0} className={FIELD_CLASS} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
           </label>
-          <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Average fee per visit
+          <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Average fee per visit <RequiredMark /></span>
             <span className="text-xs font-normal text-[#80748B]">Used only for report estimates</span>
-            <input type="number" min={0} className={FIELD_CLASS} value={avgFee} onChange={(e) => setAvgFee(Number(e.target.value))} />
+            <input type="number" required min={0} className={FIELD_CLASS} value={avgFee} onChange={(e) => setAvgFee(Number(e.target.value))} />
           </label>
         </div>
         <div>
@@ -88,7 +89,7 @@ export default function DepositSettings({ clinicId, isOwner }: { clinicId: strin
           </div>
         </div>
         <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Patient payment instructions
-          <span className="text-xs font-normal text-[#80748B]">Shown on the patient's appointment page</span>
+          <span className="text-xs font-normal text-[#80748B]">Shown on the patient&apos;s appointment page</span>
           <textarea className={`${FIELD_CLASS} min-h-28 resize-y`} rows={4} maxLength={500}
             placeholder="Example: Send the deposit using the clinic's payment details. Keep the receipt."
             value={instructions} onChange={(e) => setInstructions(e.target.value)} />

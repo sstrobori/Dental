@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import RequiredMark from "@/components/RequiredMark";
 
 export default function ServiceTimeSetting({ clinicId, isOwner }: { clinicId: string; isOwner: boolean }) {
   const supabase = useMemo(() => createClient(), []);
@@ -47,9 +48,9 @@ export default function ServiceTimeSetting({ clinicId, isOwner }: { clinicId: st
         <p className="rounded-xl bg-[#FAF8FF] p-4 leading-6 text-[#6F647A]">
           Until at least five visits have been timed from “Call” to “Mark served,” patient estimates use this typical duration. The live average takes over automatically afterward. During an active visit, estimates adjust from the time staff confirms “Patient arrived.”
         </p>
-        <label className="flex max-w-xs flex-col gap-1.5 font-semibold text-[#49365E]">Typical visit length
+        <label className="flex max-w-xs flex-col gap-1.5 font-semibold text-[#49365E]"><span>Typical visit length <RequiredMark /></span>
           <span className="text-xs font-normal text-[#80748B]">Minutes per patient</span>
-          <input type="number" min={5} max={120}
+          <input type="number" required min={5} max={120}
             className="min-h-11 rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm text-[#2E1747] outline-none transition focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]"
             value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
         </label>

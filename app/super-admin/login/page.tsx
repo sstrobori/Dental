@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import RequiredMark from "@/components/RequiredMark";
 
 export default function SuperAdminLoginPage() {
   const router = useRouter();
@@ -119,7 +120,7 @@ export default function SuperAdminLoginPage() {
               htmlFor="admin-email"
               className="mb-2 block text-sm font-semibold"
             >
-              Email address
+              Email address <RequiredMark />
             </label>
 
             <input
@@ -141,7 +142,7 @@ export default function SuperAdminLoginPage() {
               htmlFor="admin-password"
               className="mb-2 block text-sm font-semibold"
             >
-              Password
+              Password <RequiredMark />
             </label>
 
             <div className="relative">

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import RequiredMark from "@/components/RequiredMark";
 
 export type Settings = {
   accepting_bookings: boolean;
@@ -32,7 +33,8 @@ export default function BookingSettings({ clinicId, isOwner, initial }: {
   const [link, setLink] = useState("");
 
   useEffect(() => {
-    setLink(`${window.location.origin}/c/${clinicId}`);
+    const kickoff = window.setTimeout(() => setLink(`${window.location.origin}/c/${clinicId}`), 0);
+    return () => window.clearTimeout(kickoff);
   }, [clinicId]);
 
   function toggleDay(d: number) {
@@ -82,19 +84,19 @@ export default function BookingSettings({ clinicId, isOwner, initial }: {
         <div>
           <h2 className="mb-3 font-bold text-[#2E1747]">Clinic hours and capacity</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Opening time
-              <input type="time" className={FIELD_CLASS} value={s.open_time} onChange={(e) => setS({ ...s, open_time: e.target.value })} />
+            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Opening time <RequiredMark /></span>
+              <input type="time" required className={FIELD_CLASS} value={s.open_time} onChange={(e) => setS({ ...s, open_time: e.target.value })} />
             </label>
-            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Closing time
-              <input type="time" className={FIELD_CLASS} value={s.close_time} onChange={(e) => setS({ ...s, close_time: e.target.value })} />
+            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Closing time <RequiredMark /></span>
+              <input type="time" required className={FIELD_CLASS} value={s.close_time} onChange={(e) => setS({ ...s, close_time: e.target.value })} />
             </label>
-            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Appointment length
-              <select className={FIELD_CLASS} value={s.slot_minutes} onChange={(e) => setS({ ...s, slot_minutes: Number(e.target.value) })}>
+            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Appointment length <RequiredMark /></span>
+              <select required className={FIELD_CLASS} value={s.slot_minutes} onChange={(e) => setS({ ...s, slot_minutes: Number(e.target.value) })}>
                 {[15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Available chairs
-              <input type="number" min={1} max={20} className={FIELD_CLASS} value={s.chairs} onChange={(e) => setS({ ...s, chairs: Number(e.target.value) })} />
+            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Available chairs <RequiredMark /></span>
+              <input type="number" required min={1} max={20} className={FIELD_CLASS} value={s.chairs} onChange={(e) => setS({ ...s, chairs: Number(e.target.value) })} />
             </label>
           </div>
         </div>
@@ -113,13 +115,13 @@ export default function BookingSettings({ clinicId, isOwner, initial }: {
         <div>
           <h2 className="mb-3 font-bold text-[#2E1747]">Appointment policies</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Late-arrival grace
+            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Late-arrival grace <RequiredMark /></span>
               <span className="text-xs font-normal text-[#80748B]">Minutes after the appointment time</span>
-              <input type="number" min={0} max={120} className={FIELD_CLASS} value={s.grace_minutes} onChange={(e) => setS({ ...s, grace_minutes: Number(e.target.value) })} />
+              <input type="number" required min={0} max={120} className={FIELD_CLASS} value={s.grace_minutes} onChange={(e) => setS({ ...s, grace_minutes: Number(e.target.value) })} />
             </label>
-            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]">Minimum booking notice
+            <label className="flex flex-col gap-1.5 font-semibold text-[#49365E]"><span>Minimum booking notice <RequiredMark /></span>
               <span className="text-xs font-normal text-[#80748B]">Hours before the appointment</span>
-              <input type="number" min={0} max={168} className={FIELD_CLASS} value={s.min_notice_hours} onChange={(e) => setS({ ...s, min_notice_hours: Number(e.target.value) })} />
+              <input type="number" required min={0} max={168} className={FIELD_CLASS} value={s.min_notice_hours} onChange={(e) => setS({ ...s, min_notice_hours: Number(e.target.value) })} />
             </label>
           </div>
         </div>

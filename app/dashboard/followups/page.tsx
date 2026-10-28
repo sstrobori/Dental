@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 type Patient = {
   id: string;
@@ -22,6 +23,9 @@ export default function FollowUpsPage() {
   const [rows, setRows] = useState<Patient[]>([]);
   const [error, setError] = useState("");
   const [clock, setClock] = useState(0);
+  const [patientToMark, setPatientToMark] = useState<Patient | null>(null);
+  const [marking, setMarking] = useState(false);
+  const [markError, setMarkError] = useState("");
 
   useEffect(() => {
     const kickoff = window.setTimeout(() => setClock(Date.now()), 0);
@@ -55,10 +59,15 @@ export default function FollowUpsPage() {
     return () => window.clearTimeout(kickoff);
   }, [load]);
 
-  async function markContacted(id: string) {
-    const { error } = await supabase.rpc("mark_contacted", { p_patient_id: id });
-    if (error) return setError(error.message);
-    load();
+  async function markContacted() {
+    if (!patientToMark || marking) return;
+    setMarking(true);
+    setMarkError("");
+    const { error } = await supabase.rpc("mark_contacted", { p_patient_id: patientToMark.id });
+    setMarking(false);
+    if (error) return setMarkError(error.message);
+    setPatientToMark(null);
+    await load();
   }
 
   function recentlyContacted(p: Patient) {
@@ -105,13 +114,34 @@ export default function FollowUpsPage() {
                 {p.recall_contacted_at && ` · contacted ${new Date(p.recall_contacted_at).toLocaleDateString("en-PH")}`}
               </span>
             </span>
-            <button onClick={() => markContacted(p.id)} className="min-h-11 w-full shrink-0 rounded-xl bg-[#6d3aa8] px-4 py-2 text-sm font-bold text-white hover:bg-[#572c87] sm:w-auto">Mark contacted</button>
+            <button type="button" onClick={() => { setMarkError(""); setPatientToMark(p); }} className="min-h-11 w-full shrink-0 rounded-xl bg-[#6d3aa8] px-4 py-2 text-sm font-bold text-white hover:bg-[#572c87] sm:w-auto">Mark contacted</button>
           </li>
         ))}
       </ul>
       <p className="mt-4 text-xs leading-5 text-[#756581]">
         Imported patients appear here only after their first visit through this app, because their earlier visit dates are not known.
       </p>
+      <ConfirmationModal
+        open={!!patientToMark}
+        title="Mark this patient as contacted?"
+        description={
+          <>
+            Confirm only after reaching out to <strong className="text-[#2E1747]">{patientToMark?.name}</strong>. They will be hidden from this follow-up list for 30 days.
+          </>
+        }
+        confirmLabel="Mark contacted"
+        cancelLabel="Not yet"
+        busy={marking}
+        busyLabel="Saving…"
+        tone="primary"
+        error={markError}
+        onCancel={() => {
+          if (marking) return;
+          setPatientToMark(null);
+          setMarkError("");
+        }}
+        onConfirm={() => void markContacted()}
+      />
     </div>
   );
 }
