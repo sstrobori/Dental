@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import RequiredMark from "@/components/RequiredMark";
@@ -88,6 +88,7 @@ function confirmationCopy(target: ConfirmTarget) {
         tone: "purple" as const,
       };
   }
+  throw new Error("Unsupported queue action");
 }
 type SyncState = "connecting" | "live" | "fallback" | "offline";
 const PH_MOBILE_PATTERN = /^(?:09\d{9}|\+639\d{9})$/;
@@ -121,7 +122,7 @@ export default function QueueBoard({
   initialGraceMinutes: number;
   initial: Entry[];
 }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [entries, setEntries] = useState<Entry[]>(initial);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("09");
@@ -136,9 +137,63 @@ export default function QueueBoard({
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [pendingId, setPendingId] = useState("");
   const [adding, setAdding] = useState(false);
+  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [walkInError, setWalkInError] = useState("");
+  const walkInTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const walkInCloseRef = useRef<HTMLButtonElement | null>(null);
+  const walkInDialogRef = useRef<HTMLDivElement | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const { names: REASONS } = useVisitReasons(clinicId, "staff");
+  function openWalkIn() {
+    if (adding) return;
+    setWalkInError("");
+    setWalkInOpen(true);
+  }
+  function closeWalkIn() {
+    if (adding) return;
+    setWalkInOpen(false);
+    setWalkInError("");
+    walkInTriggerRef.current?.focus();
+  }
+  useEffect(() => {
+    if (!walkInOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    walkInCloseRef.current?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (!adding) {
+          event.preventDefault();
+          setWalkInOpen(false);
+          setWalkInError("");
+          walkInTriggerRef.current?.focus();
+        }
+        return;
+      }
+      if (event.key !== "Tab" || !walkInDialogRef.current) return;
+      const focusable = Array.from(
+        walkInDialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]'
+        )
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [walkInOpen, adding]);
   useEffect(() => {
     const kickoff = window.setTimeout(() => setOrigin(window.location.origin), 0);
     return () => window.clearTimeout(kickoff);
@@ -352,44 +407,65 @@ export default function QueueBoard({
     setNotice(placement === "next" ? "Patient is next in line." : "Patient was placed at the back of the line.");
     await refresh();
   }
-  async function addWalkIn(e: React.FormEvent) {
+  async function addWalkIn(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError("");
+    if (adding) return;
+    setWalkInError("");
     setNotice("");
     if (!navigator.onLine) {
       setSyncState("offline");
-      setError("No internet connection. Nothing changed. Reconnect, then try again.");
+      setWalkInError("No internet connection. Nothing changed. Reconnect, then try again.");
       return;
     }
     if (!name.trim()) {
-      return setError("Enter the patient's name.");
+      setWalkInError("Enter the patient's name.");
+      return;
     }
     if (phone !== "" && phone !== "09" && !PH_MOBILE_PATTERN.test(phone)) {
-      return setError(
-        "Enter a valid Philippine mobile number: 09171234567 or +639171234567."
-      );
+      setWalkInError("Enter a valid Philippine mobile number: 09171234567 or +639171234567.");
+      return;
     }
     if (isMinor && !guardian.trim()) {
-      return setError("Enter the parent or guardian's name.");
+      setWalkInError("Enter the parent or guardian's name.");
+      return;
     }
     setAdding(true);
-    const { data, error } = await supabase
-      .from("queue_entries")
-      .insert({
-        clinic_id: clinicId,
-        name: name.trim(),
-        phone: phone === "09" ? null : phone.trim() || null,
-        visit_reason: reason || null,
-        is_minor: isMinor,
-        guardian_name: isMinor ? guardian.trim() : null,
-      })
-      .select("queue_number")
-      .single();
-    setAdding(false);
-    if (error) return setError(error.message);
-    setNotice(`${name.trim()} is #${data.queue_number}. Tell the patient their number.`);
-    setName(""); setPhone("09"); setReason(""); setIsMinor(false); setGuardian("");
-    refresh();
+    try {
+      const { data, error: insertError } = await supabase
+        .from("queue_entries")
+        .insert({
+          clinic_id: clinicId,
+          name: name.trim(),
+          phone: phone === "09" ? null : phone.trim() || null,
+          visit_reason: reason || null,
+          is_minor: isMinor,
+          guardian_name: isMinor ? guardian.trim() : null,
+        })
+        .select("queue_number")
+        .single();
+      if (insertError) {
+        setWalkInError(insertError.message);
+        return;
+      }
+      if (!data?.queue_number) {
+        setWalkInError("The queue entry could not be verified. Check the queue before trying again.");
+        return;
+      }
+      setNotice(`${name.trim()} is #${data.queue_number}. Tell the patient their number.`);
+      setName("");
+      setPhone("09");
+      setReason("");
+      setIsMinor(false);
+      setGuardian("");
+      setWalkInOpen(false);
+      setWalkInError("");
+      walkInTriggerRef.current?.focus();
+      await refresh();
+    } catch {
+      setWalkInError("Unable to add the patient. Please check the queue and try again.");
+    } finally {
+      setAdding(false);
+    }
   }
   function printPoster() {
     const svg = document.getElementById("qr-wrap")?.innerHTML ?? "";
@@ -447,7 +523,7 @@ export default function QueueBoard({
   const joinUrl = `${origin}/guest/${clinicId}`;
   const displayUrl = `${origin}/display/${clinicId}`;
   return (
-    <div className="mx-4 mt-6 flex flex-col gap-5 text-[#2E1747] sm:mx-6 sm:mt-8 sm:gap-6 lg:mx-8">
+    <div className="mx-4 mt-6 flex min-h-[calc(100dvh-10rem)] flex-col gap-5 pb-6 text-[#2E1747] sm:mx-6 sm:mt-8 sm:gap-6 lg:mx-8 lg:min-h-[calc(100dvh-3rem)]">
     {/* Live Queue and Online Queue Joining */}
     <header className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm">
       {/* Live Queue Header */}
@@ -460,21 +536,21 @@ export default function QueueBoard({
             Call patients, manage late arrivals, and keep the front desk moving.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => next && requestConfirmation("call", next)}
-          disabled={
-            !next ||
-            !!pendingId ||
-            syncState === "offline"
-          }
-className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEAFE] px-6 py-3 font-bold text-[#1D4ED8] shadow-sm transition hover:bg-[#BFDBFE] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"        >
-          {pendingId === next?.id
-            ? "Calling…"
-            : next
-              ? `Call next · #${next.queue_number}`
-              : "Queue is empty"}
-        </button>
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+
+          <button
+            type="button"
+            onClick={() => next && requestConfirmation("call", next)}
+            disabled={!next || !!pendingId || syncState === "offline"}
+            className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEAFE] px-6 py-3 font-bold text-[#1D4ED8] shadow-sm transition hover:bg-[#BFDBFE] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+          >
+            {pendingId === next?.id
+              ? "Calling…"
+              : next
+                ? `Call next · #${next.queue_number}`
+                : "Queue is empty"}
+          </button>
+        </div>
       </div>
       {/* Online Queue Joining - Integrated */}
       <ClinicControls
@@ -484,22 +560,8 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
     </header>
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{notice}</p>}
-      <section aria-label="Today at a glance" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {[
-          ["Waiting", waiting.length],
-          ["Served", served],
-          ["No-show", noShow],
-          ["Left queue", left],
-          ["Average wait", avgWait === null ? "—" : `${avgWait} min`],
-        ].map(([label, value]) => (
-          <div key={label as string} className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold text-[#756581]">{label}</p>
-            <p className="mt-1 text-2xl font-extrabold tracking-tight text-[#2E1747]">{value}</p>
-          </div>
-        ))}
-      </section>
-      <div className="grid gap-5 xl:grid-cols-12 xl:items-start">
-        <section aria-labelledby="serving-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-4">
+      <div className="grid flex-1 auto-rows-fr gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] xl:items-stretch">
+        <section aria-labelledby="serving-heading" className="flex min-h-[320px] min-w-0 flex-col rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:min-h-[380px] sm:p-5 xl:min-h-[440px]">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 id="serving-heading" className="mt-1 text-lg font-bold">Now serving</h2>
@@ -508,7 +570,7 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
             {called.length} active
           </span>
           </div>
-          {called.length === 0 && <p className="rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#756581]">No patient has been called yet.</p>}
+          {called.length === 0 && <p className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-[#E4D5F6] bg-[#FCFAFF] p-6 text-center text-sm text-[#756581]">No patient has been called yet.</p>}
           <ul className="flex flex-col gap-3">
             {called.map((e) => (
                   <li key={e.id} className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
@@ -568,16 +630,27 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
             ))}
           </ul>
         </section>
-        <section aria-labelledby="waiting-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <section aria-labelledby="waiting-heading" className="flex min-h-[320px] min-w-0 flex-col rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:min-h-[380px] sm:p-5 xl:min-h-[440px]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="waiting-heading" className="mt-1 text-lg font-bold">Waiting queue</h2>
             </div>
-          <span className="rounded-full border border-[#F2DB9C] bg-[#FFF4D9] px-3 py-1 text-xs font-semibold text-[#925900]">
-            {waiting.length} waiting
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="rounded-full border border-[#F2DB9C] bg-[#FFF4D9] px-3 py-1 text-xs font-semibold text-[#925900]">
+              {waiting.length} waiting
+            </span>
+            <button
+              ref={walkInTriggerRef}
+              type="button"
+              onClick={openWalkIn}
+              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#6D3AA8] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCDEF] sm:px-4 sm:text-sm"
+            >
+              <span aria-hidden="true" className="text-lg leading-none">+</span>
+              Add a walk-in
+            </button>
           </div>
-          {waiting.length === 0 && <p className="rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#756581]">The queue is empty.</p>}
+          </div>
+          {waiting.length === 0 && <p className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-[#E4D5F6] bg-[#FCFAFF] p-6 text-center text-sm text-[#756581]">The queue is empty.</p>}
           <ul className="flex flex-col gap-3">
             {waiting.map((e, index) => (
                   <li
@@ -648,9 +721,56 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
             </div>
           )}
         </section>
-        <section aria-labelledby="walkin-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-3">
-          <h2 id="walkin-heading" className="mt-1 text-lg font-bold">Add a walk-in</h2>
-          <p className="mt-1 text-sm text-[#756581]">Create a queue number for a walk-in patient.</p>
+      </div>
+      <section aria-label="Today at a glance" className="mt-auto grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        {[
+          ["Waiting", waiting.length],
+          ["Served", served],
+          ["No-show", noShow],
+          ["Left queue", left],
+          ["Average wait", avgWait === null ? "—" : `${avgWait} min`],
+        ].map(([label, value]) => (
+          <div key={label as string} className="flex min-h-14 items-center justify-between gap-2 rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 shadow-sm">
+            <p className="text-xs font-medium text-[#756581]">{label}</p>
+            <p className="shrink-0 text-lg font-extrabold tracking-tight text-[#2E1747]">{value}</p>
+          </div>
+        ))}
+      </section>
+      {walkInOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
+          <button
+            type="button"
+            aria-label="Close walk-in dialog"
+            onClick={closeWalkIn}
+            disabled={adding}
+            className="absolute inset-0 cursor-default bg-[#1F122F]/60"
+          />
+          <div
+            ref={walkInDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="walkin-heading"
+            aria-describedby="walkin-description"
+            className="relative z-10 flex max-h-[min(92dvh,850px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-2xl"
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#E4D5F6] bg-[#FCFAFF] px-5 py-4 sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">Front desk</p>
+                <h2 id="walkin-heading" className="mt-1 text-xl font-bold">Add a walk-in</h2>
+                <p id="walkin-description" className="mt-1 text-sm text-[#756581]">Add a walk-in patient to the queue.</p>
+              </div>
+              <button
+                ref={walkInCloseRef}
+                type="button"
+                onClick={closeWalkIn}
+                disabled={adding}
+                aria-label="Close walk-in dialog"
+                className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[#E4D5F6] bg-white text-xl text-[#6D3AA8] hover:bg-[#F2EAFF] disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+            <div className="min-h-0 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
           <form onSubmit={addWalkIn} className="mt-5 flex flex-col gap-4">
             <div>
               <label htmlFor="walkin-name" className="mb-1.5 block text-sm font-semibold">Patient name <RequiredMark /></label>
@@ -697,12 +817,34 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
                 <input id="walkin-guardian" required className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" placeholder="Full name" value={guardian} onChange={(e) => setGuardian(e.target.value)} />
               </div>
             )}
-            <button disabled={adding || syncState === "offline"} aria-busy={adding} className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 font-bold text-white transition hover:bg-[#572C87] disabled:cursor-not-allowed disabled:opacity-45">
-              {adding ? "Adding patient…" : "Add to queue"}
-            </button>
+            {walkInError && (
+              <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+                {walkInError}
+              </p>
+            )}
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeWalkIn}
+                disabled={adding}
+                className="min-h-12 rounded-xl border border-[#D8C5EC] bg-white px-5 py-3 font-semibold text-[#5A2E8A] transition hover:bg-[#F8F3FF] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={adding || syncState === "offline"}
+                aria-busy={adding}
+                className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 font-bold text-white transition hover:bg-[#572C87] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {adding ? "Adding patient…" : "Add to queue"}
+              </button>
+            </div>
           </form>
-        </section>
-      </div>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmTarget && (() => {
         const copy = confirmationCopy(confirmTarget);
         return (

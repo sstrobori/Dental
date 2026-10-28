@@ -29,6 +29,11 @@ export default function PendingBookingsPanel({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const matching = bookings.filter((b) => {
+    const q = search.trim().toLocaleLowerCase();
+    return !q || [b.name, b.reason ?? "", b.phone ?? "", b.starts_at].some((value) => value.toLocaleLowerCase().includes(q));
+  });
 
   const refresh = useCallback(async () => {
     if (!clinicId) return;
@@ -154,6 +159,9 @@ export default function PendingBookingsPanel({
               </span>
             )}
           </div>
+          <p className="mt-1 text-sm text-[#6F647A]">
+            All unconfirmed appointments across every date. No date selection needed.
+          </p>
         </div>
       </div>
 
@@ -168,43 +176,45 @@ export default function PendingBookingsPanel({
         </p>
       )}
 
+      <label className="mt-4 block">
+        <span className="sr-only">Search pending bookings</span>
+        <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search pending bookings" className="min-h-10 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm outline-none focus-visible:ring-4 focus-visible:ring-[#F2EAFF]" />
+      </label>
       {loading ? (
-        <p role="status" className="mt-5 text-sm text-[#6F647A]">Loading pending bookings...</p>
+        <p role="status" className="mt-4 text-sm text-[#6F647A]">Loading pending bookings...</p>
       ) : bookings.length === 0 && !error ? (
-        <p className="mt-5 rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#6F647A]">
-          No bookings are awaiting confirmation.
-        </p>
+        <p className="mt-4 rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#6F647A]">No bookings are awaiting confirmation.</p>
+      ) : matching.length === 0 ? (
+        <p className="mt-4 rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#6F647A]">No pending bookings match your search.</p>
       ) : (
-        <ul className="mt-5 flex flex-col gap-3">
-          {bookings.map((booking) => (
-            <li
-              key={booking.id}
-              className="flex flex-col gap-3 rounded-xl border border-[#E9DDF7] bg-[#FCFAFF] p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <p className="font-bold text-[#2E1747]">{booking.name}</p>
-                <p className="mt-1 text-sm font-medium text-[#6D3AA8]">
-                  {formatDateTime(booking.starts_at)}
-                </p>
-                <p className="mt-1 break-words text-sm text-[#6F647A]">
-                  {booking.reason || "Reason not specified"}
-                  {booking.phone ? ` · ${booking.phone}` : ""}
-                  {booking.is_minor && booking.guardian_name
-                    ? ` · Guardian: ${booking.guardian_name}`
-                    : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={confirmingId !== null}
-                aria-busy={confirmingId === booking.id}
-                onClick={() => void confirmBooking(booking)}
-                className="min-h-11 self-end shrink-0 rounded-xl border border-[#32965F] bg-[#E8F6ED] px-5 py-2.5 text-sm font-bold text-[#247344] transition hover:bg-[#D4EDDD] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 sm:self-center"              >
-                {confirmingId === booking.id ? "Confirming..." : "Confirm booking"}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-4 overflow-hidden rounded-xl border border-[#E9DDF7]">
+          <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_auto] gap-2 border-b border-[#E4D5F6] bg-[#FAF8FF] px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-[#756581] sm:grid">
+            <span>Patient</span><span>Appointment</span><span className="text-right">Action</span>
+          </div>
+          <ul className="divide-y divide-[#EFE8F5]">
+            {matching.map((booking) => (
+              <li key={booking.id} className="grid grid-cols-1 items-center gap-2 bg-white px-3 py-3 hover:bg-[#FCFAFF] sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_auto]">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-bold text-[#2E1747]">{booking.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-[#756581]" title={`${booking.reason || "Reason not specified"}${booking.phone ? ` · ${booking.phone}` : ""}`}>
+                    {booking.reason || "Reason not specified"}{booking.phone ? ` · ${booking.phone}` : ""}
+                  </p>
+                  {booking.is_minor && booking.guardian_name && <p className="mt-0.5 text-xs text-[#756581]">Guardian: {booking.guardian_name}</p>}
+                </div>
+                <p className="text-xs font-semibold text-[#6D3AA8]">{formatDateTime(booking.starts_at)}</p>
+                <button
+                  type="button"
+                  disabled={confirmingId !== null}
+                  aria-busy={confirmingId === booking.id}
+                  onClick={() => void confirmBooking(booking)}
+                  className="min-h-10 w-fit justify-self-end whitespace-nowrap rounded-xl border border-[#32965F] bg-[#E8F6ED] px-3 py-2 text-xs font-bold text-[#247344] transition hover:bg-[#D4EDDD] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {confirmingId === booking.id ? "Confirming..." : "Confirm booking"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

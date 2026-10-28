@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { todayManila } from "@/lib/today";
 
@@ -130,6 +131,7 @@ export default function ServedCalendarPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(
     null
   );
+  const [daySearch, setDaySearch] = useState("");
 
   const closeButtonRef = useRef<HTMLButtonElement | null>(
     null
@@ -492,12 +494,20 @@ export default function ServedCalendarPage() {
     ? appointmentsByDate.get(selectedDay) ?? []
     : [];
   const selectedAppointmentsCount = selectedAppointments.length;
+  const q = daySearch.trim().toLocaleLowerCase();
+  const shownAppointments = selectedAppointments.filter((appt) =>
+    !q || [appt.name, appt.reason ?? "", servedTime(appt.starts_at), APPOINTMENT_STATUS[appt.status]].some((value) => value.toLocaleLowerCase().includes(q))
+  );
+  const shownVisits = selectedRecords.filter((visit) =>
+    !q || [visit.name, visit.visit_reason ?? "", String(visit.queue_number)].some((value) => value.toLocaleLowerCase().includes(q))
+  );
 
   function openDate(
     day: string,
     button: HTMLButtonElement
   ) {
     dateButtonRef.current = button;
+    setDaySearch("");
     setSelectedDay(day);
   }
 
@@ -570,16 +580,12 @@ export default function ServedCalendarPage() {
             {/* MONTHLY TOTALS — TWO DIFFERENT EVENT TYPES */}
 
             <div className="mr-auto flex flex-wrap items-center gap-2">
-
-              <div className="flex items-center gap-2 rounded-xl bg-[#DCFCE7] px-3 py-2.5 sm:px-4">
-                <span className="text-2xl font-extrabold tabular-nums text-[#15803D]">
+              <div className="flex items-center gap-2 rounded-xl bg-[#F7F2FF] px-3 py-2.5 sm:px-4">
+                <span className="text-2xl font-extrabold tabular-nums text-[#6D3AA8]">
                   {loading || checkingAccess ? "—" : records.length.toLocaleString("en-PH")}
                 </span>
-                <span className="text-xs font-semibold text-[#15803D]">
-                  Served
-                </span>
+                <span className="text-xs font-semibold text-[#5C327F]">Served</span>
               </div>
-
               <div className="flex items-center gap-2 rounded-xl bg-[#EAF4FF] px-3 py-2.5 sm:px-4">
                 <span className="text-2xl font-extrabold tabular-nums text-[#1D4ED8]">
                   {loading || checkingAccess ? "—" : appointments.length.toLocaleString("en-PH")}
@@ -750,9 +756,7 @@ export default function ServedCalendarPage() {
                   {/* COUNTS — SEPARATE COMPLETED VISITS AND BOOKINGS */}
                   <span className="mt-auto flex w-full flex-col gap-0.5 pb-1 text-center text-[10px] font-semibold leading-4 sm:text-xs">
                     {servedCount > 0 && (
-                      <span className="font-semibold text-[#15803D]">
-                        {servedCount} served
-                      </span>
+                      <span className="text-[#6D3AA8]">{servedCount} served</span>
                     )}
                     {appointmentCount > 0 && (
                       <span className="text-[#1D4ED8]">{appointmentCount} appt{appointmentCount === 1 ? "" : "s"}</span>
@@ -773,7 +777,7 @@ export default function ServedCalendarPage() {
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-[#15803D]" aria-hidden="true" />
+              <span className="h-3 w-3 rounded-full bg-[#6D3AA8]" aria-hidden="true" />
               Served visits
             </span>
             <span className="flex items-center gap-2">
@@ -827,7 +831,7 @@ export default function ServedCalendarPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="served-day-title"
-            className="flex max-h-[85dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-[0_30px_100px_rgba(28,15,44,0.3)]"
+            className="flex max-h-[88dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-[0_30px_100px_rgba(28,15,44,0.3)]"
           >
 
             {/* MODAL HEADER */}
@@ -835,11 +839,6 @@ export default function ServedCalendarPage() {
             <header className="flex items-start justify-between gap-3 border-b border-[#EDE5F5] p-4 sm:p-6">
 
               <div className="min-w-0">
-
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8B5CB5]">
-                  Daily clinic schedule
-                </p>
-
                 <h2
                   id="served-day-title"
                   className="mt-1 text-lg font-extrabold sm:text-xl"
@@ -848,7 +847,7 @@ export default function ServedCalendarPage() {
                 </h2>
 
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="inline-flex rounded-full bg-[#DCFCE7] px-3 py-1.5 text-xs font-bold text-[#15803D]">
+                  <span className="inline-flex rounded-full bg-[#F2EAFF] px-3 py-1.5 text-xs font-bold text-[#6D3AA8]">
                     {selectedCount} served
                   </span>
                   <span className="inline-flex rounded-full bg-[#EAF4FF] px-3 py-1.5 text-xs font-bold text-[#1D4ED8]">
@@ -881,85 +880,73 @@ export default function ServedCalendarPage() {
 
             </header>
 
-            {/* DAILY DETAILS — BOOKINGS ARE NOT COUNTED AS SERVED */}
-            <div className="space-y-6 overflow-y-auto p-4 sm:p-6">
+            {/* COMPACT DAILY DETAIL VIEW — COUNTS REMAIN DISTINCT */}
+            <div className="min-h-0 space-y-5 overflow-y-auto p-4 sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex-1">
+                  <span className="sr-only">Search this day's patients</span>
+                  <input type="search" value={daySearch} onChange={(event) => setDaySearch(event.target.value)} placeholder="Search this day’s patients" className="min-h-10 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm outline-none focus-visible:ring-4 focus-visible:ring-[#F2EAFF]" />
+                </label>
+                <Link href={`/dashboard/appointments?date=${selectedDay}`} className="inline-flex min-h-10 items-center justify-center whitespace-nowrap rounded-xl border border-[#D7C4EA] bg-[#F2EAFF] px-3 py-2 text-xs font-bold text-[#5C327F] transition hover:bg-[#E9DDF7]">
+                  View in Appointments
+                </Link>
+              </div>
               {selectedCount === 0 && selectedAppointmentsCount === 0 && (
-                <p className="rounded-xl bg-[#FAF8FF] p-5 text-center text-sm text-[#756581]">
-                  No completed visits or appointments for this day.
-                </p>
+                <p className="rounded-xl bg-[#FAF8FF] p-5 text-center text-sm text-[#756581]">No completed visits or appointments for this day.</p>
               )}
-
               {selectedAppointmentsCount > 0 && (
-                <section aria-label="Scheduled appointments">
-                  <h3 className="mb-3 text-sm font-bold text-[#1D4ED8]">
-                    Appointments ({selectedAppointmentsCount})
-                  </h3>
-                  <ul className="space-y-3">
-                    {selectedAppointments.map((appointment) => (
-                      <li
-                        key={`appointment-${appointment.id}`}
-                        className="flex items-start gap-3 rounded-xl border border-[#BFDBFE] bg-[#F8FBFF] p-4"
-                      >
-                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#DBEAFE] text-[#1D4ED8]" aria-hidden="true">
-                          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="5" width="18" height="16" rx="3" />
-                            <path d="M8 3v4m8-4v4M3 10h18" />
-                          </svg>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="break-words font-bold text-[#2E1747]">{appointment.name}</p>
-                          <p className="mt-1 break-words text-sm text-[#756581]">
-                            {appointment.reason || "Reason not specified"}
-                          </p>
-                          <p className="mt-2 text-xs font-semibold text-[#1D4ED8]">
-                            Scheduled at {servedTime(appointment.starts_at)}
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded-full border border-[#BFDBFE] bg-white px-2 py-1 text-[11px] font-bold text-[#1D4ED8]">
-                          {APPOINTMENT_STATUS[appointment.status]}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                <section aria-label="Scheduled appointments" className="overflow-hidden rounded-xl border border-[#E4D5F6]">
+                  <div className="flex items-center justify-between gap-3 border-b border-[#E4D5F6] bg-[#FAF8FF] px-3 py-2.5">
+                    <h3 className="text-sm font-bold text-[#5C327F]">Appointments ({selectedAppointmentsCount})</h3>
+                    <span className="text-xs text-[#756581]">{shownAppointments.length} shown</span>
+                  </div>
+                  <div className="hidden grid-cols-[6rem_minmax(0,1.15fr)_minmax(0,1fr)_6rem] gap-3 border-b border-[#EDE5F5] bg-white px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-[#756581] sm:grid">
+                    <span>Time</span><span>Patient</span><span>Reason</span><span>Status</span>
+                  </div>
+                  {shownAppointments.length === 0 ? (
+                    <p className="p-4 text-sm text-[#756581]">No appointments match this search.</p>
+                  ) : (
+                    <ul className="divide-y divide-[#EDE5F5]">
+                      {shownAppointments.map((appointment) => (
+                        <li key={`appointment-${appointment.id}`} className="grid grid-cols-1 gap-1 bg-white px-3 py-2.5 text-sm hover:bg-[#FCFAFF] sm:grid-cols-[6rem_minmax(0,1.15fr)_minmax(0,1fr)_6rem] sm:items-center sm:gap-3">
+                          <span className="font-bold tabular-nums text-[#49365E]">{servedTime(appointment.starts_at)}</span>
+                          <span className="break-words font-semibold text-[#2E1747]">{appointment.name}</span>
+                          <span className="break-words text-xs text-[#756581]">{appointment.reason || "Reason not specified"}</span>
+                          <span className={`w-fit rounded-full px-2 py-1 text-[11px] font-semibold ${appointment.status === "confirmed" ? "bg-[#E8F6ED] text-[#247344]" : appointment.status === "booked" ? "bg-[#FFF4D9] text-[#925900]" : "bg-[#F2EAFF] text-[#5C327F]"}`}>
+                            {APPOINTMENT_STATUS[appointment.status]}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </section>
               )}
-
               {selectedCount > 0 && (
-                <section aria-label="Completed queue visits">
-                  <h3 className="mb-3 text-sm font-bold text-[#6D3AA8]">
-                    Served visits ({selectedCount})
-                  </h3>
-                  <ul className="space-y-3">
-                    {selectedRecords.map((patient) => {
-                      const time = patient.served_at ?? patient.finished_at;
-                      return (
-                        <li
-                          key={`served-${patient.id}`}
-                          className="flex items-start gap-3 rounded-xl border border-[#E4D5F6] bg-white p-4"
-                        >
-                          <div className="min-w-[3rem] rounded-lg bg-[#F2EAFF] px-2 py-2 text-center text-sm font-extrabold tabular-nums text-[#6D3AA8]">
-                            #{patient.queue_number}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="break-words font-bold text-[#2E1747]">{patient.name}</p>
-                            <p className="mt-1 break-words text-sm text-[#756581]">
-                              {patient.visit_reason || "Reason not specified"}
-                            </p>
-                            <p className="mt-2 text-xs font-semibold text-[#6D3AA8]">
-                              {time
-                                ? `Served at ${servedTime(time)}`
-                                : "Completion time not recorded · date estimated"}
-                            </p>
-                          </div>
-                          {patient.appointment_id && (
-                            <span className="shrink-0 rounded-full bg-[#F2EAFF] px-2 py-1 text-[11px] font-semibold text-[#6D3AA8]">
-                              Booked visit
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
+                <section aria-label="Completed queue visits" className="overflow-hidden rounded-xl border border-[#E4D5F6]">
+                  <div className="flex items-center justify-between gap-3 border-b border-[#E4D5F6] bg-[#FAF8FF] px-3 py-2.5">
+                    <h3 className="text-sm font-bold text-[#5C327F]">Served visits ({selectedCount})</h3>
+                    <span className="text-xs text-[#756581]">{shownVisits.length} shown</span>
+                  </div>
+                  <div className="hidden grid-cols-[4rem_minmax(0,1.2fr)_minmax(0,1fr)_8rem] gap-3 border-b border-[#EDE5F5] px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-[#756581] sm:grid">
+                    <span>Queue</span><span>Patient</span><span>Visit reason</span><span>Completed</span>
+                  </div>
+                  {shownVisits.length === 0 ? (
+                    <p className="p-4 text-sm text-[#756581]">No served visits match this search.</p>
+                  ) : (
+                    <ul className="divide-y divide-[#EDE5F5]">
+                      {shownVisits.map((patient) => {
+                        const time = patient.served_at ?? patient.finished_at;
+                        return (
+                          <li key={`served-${patient.id}`} className="grid grid-cols-1 gap-1 bg-white px-3 py-2.5 text-sm hover:bg-[#FCFAFF] sm:grid-cols-[4rem_minmax(0,1.2fr)_minmax(0,1fr)_8rem] sm:items-center sm:gap-3">
+                            <span className="font-bold tabular-nums text-[#6D3AA8]">#{patient.queue_number}</span>
+                            <span className="break-words font-semibold text-[#2E1747]">{patient.name}{patient.appointment_id && <span className="ml-1.5 text-[10px] font-medium text-[#8B5CB5]">Booked visit</span>}</span>
+                            <span className="break-words text-xs text-[#756581]">{patient.visit_reason || "Reason not specified"}</span>
+                            <span className="text-xs font-semibold text-[#6D3AA8]">{time ? servedTime(time) : "Time not recorded"}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </section>
               )}
             </div>

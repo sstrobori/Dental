@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import Link from "next/link";
 
@@ -112,27 +112,33 @@ function confirmationCopy(target: ConfirmationTarget) {
   }
 
   if (target.kind === "waitlist") {
+
     return {
+
       title: `Remove ${target.patient.name} from the waitlist?`,
-      description:
-        "They will no longer appear when staff look for patients to call about an open appointment time.",
+
+      description: "They will no longer appear when staff look for patients to call about an open appointment time.",
+
       confirmLabel: "Remove from waitlist",
+
       cancelLabel: "Keep on waitlist",
+
       busyLabel: "Removing…",
+
       tone: "danger" as const,
+
     };
+
   }
+
 
   throw new Error("Unsupported confirmation action");
 }
-
-
 
 export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "book" | "all" }) {
 
   const supabase = useMemo(() => createClient(), []);
 
-  const router = useRouter();
 
   const pathname = usePathname();
 
@@ -297,19 +303,41 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
 
   }, []);
 
+  // A day selected on the calendar opens the same date here.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("date");
+    if (!requested || !/^\d{4}-\d{2}-\d{2}$/.test(requested)) return;
+    const [y, m, d] = requested.split("-").map(Number);
+    const valid = new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === requested;
+    if (valid) setDay(requested);
+  }, []);
+
   const load = useCallback(async () => {
 
     if (!clinicId || !day) return;
 
     const [start, end] = dayRangeManila(day);
 
-    const { data } = await supabase
-
-      .from("appointments").select("*").eq("clinic_id", clinicId)
-
-      .gte("starts_at", start).lt("starts_at", end).order("starts_at");
-
-    setAppts((data ?? []) as Appt[]);
+    const allAppointments: Appt[] = [];
+    const pageSize = 200;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error: fetchError } = await supabase
+        .from("appointments")
+        .select("*")
+        .eq("clinic_id", clinicId)
+        .gte("starts_at", start)
+        .lt("starts_at", end)
+        .order("starts_at")
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      if (fetchError) {
+        setError(`Could not load scheduled patients: ${fetchError.message}`);
+        return;
+      }
+      allAppointments.push(...((data ?? []) as Appt[]));
+      if ((data ?? []).length < pageSize) break;
+    }
+    setAppts(allAppointments);
 
     const { data: w } = await supabase
 
@@ -591,6 +619,16 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
 
   }
 
+  const [scheduleSearch, setScheduleSearch] = useState("");
+  const [scheduleFilter, setScheduleFilter] = useState("active");
+  const scheduled = appts.filter((a) => {
+    if (view === "all" && a.status === "booked") return false;
+    if (scheduleFilter === "active" && (a.status === "cancelled" || a.status === "no_show")) return false;
+    if (scheduleFilter !== "all" && scheduleFilter !== "active" && a.status !== scheduleFilter) return false;
+    const q = scheduleSearch.trim().toLocaleLowerCase();
+    return !q || [a.name, a.phone ?? "", a.reason ?? "", a.guardian_name ?? ""].some((v) => v.toLocaleLowerCase().includes(q));
+  });
+
   const isToday = !!today && day === today;
 
   const badge: Record<Status, string> = {
@@ -690,105 +728,83 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
 
           </div>
 
-          {day && appts.filter((a) => view !== "all" || (a.status !== "booked" && a.status !== "cancelled")).length === 0 && (
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="flex-1">
+              <span className="sr-only">Search scheduled patients</span>
+              <input
+                type="search"
+                value={scheduleSearch}
+                onChange={(e) => setScheduleSearch(e.target.value)}
+                placeholder="Search patient, reason, or phone"
+                className="min-h-10 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm outline-none focus:ring-4 focus:ring-[#F2EAFF]"
+              />
+            </label>
+            <label>
+              <span className="sr-only">Filter scheduled patient status</span>
+              <select value={scheduleFilter} onChange={(e) => setScheduleFilter(e.target.value)} className="min-h-10 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 text-sm text-[#49365E] outline-none focus:ring-4 focus:ring-[#F2EAFF] sm:w-auto">
+                <option value="active">Active &amp; completed</option>
+                <option value="all">All statuses</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="arrived">Checked in</option>
+                <option value="completed">Completed</option>
+                {view === "scheduled" && <option value="booked">Pending</option>}
+                <option value="no_show">No-show</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+          </div>
 
-            <div className="mt-5 rounded-xl bg-[#FAF8FF] p-5 text-center text-sm text-[#6F647A]">No scheduled patients on this day.</div>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-[#756581]" aria-live="polite">{scheduled.length} patient{scheduled.length === 1 ? "" : "s"} shown</p>
+            <Link href="/dashboard/calendar" className="text-xs font-semibold text-[#6D3AA8] hover:underline">Open calendar</Link>
+          </div>
 
-          )}
-
-          <ul className="mt-5 flex flex-col gap-3">
-
-            {appts.filter((a) => view !== "all" || (a.status !== "booked" && a.status !== "cancelled")).map((a) => {
-
-              const open = a.status === "booked" || a.status === "confirmed";
-
-              const past = clock > 0 && new Date(a.starts_at).getTime() < clock;
-
-              const arrivalTiming = open && clock > 0 ? getArrivalTiming(a.starts_at, clock, settings?.grace_minutes ?? 15) : null;
-
-              return (
-
-                <li key={a.id} className="rounded-2xl border border-[#E4D5F6] bg-[#FCFAFF] p-4 text-sm">
-
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-
-                    <div className="min-w-0">
-
-                      <p className="text-base font-bold text-[#2E1747]">{formatTime(a.starts_at)} · {a.name}</p>
-
-                      <p className="mt-1 break-words text-[#6F647A]">
-
-                        {a.reason ?? "No reason"} · {a.phone ?? "no phone"}
-
-                        {a.is_minor && ` · child, guardian: ${a.guardian_name ?? "not given"}`}
-
-                      </p>
-
-                      {(a.changed_late || a.reschedule_count > 0) && (
-
-                        <p className="mt-2 text-xs font-medium text-amber-700">
-
-                          {a.changed_late ? "Late change. " : ""}{a.reschedule_count > 0 ? `Moved ${a.reschedule_count}x.` : ""}
-
-                        </p>
-
-                      )}
-
-                      {isToday && open && arrivalTiming?.window === "grace" && (
-
-                        <p className="mt-2 text-xs font-medium text-amber-700">
-
-                          {arrivalTiming.minutesAfterStart} min late · still within the {settings?.grace_minutes ?? 15}-min grace period
-
-                        </p>
-
-                      )}
-
-                      {isToday && open && arrivalTiming?.window === "late" && (
-
-                        <p className="mt-2 text-xs font-medium text-red-700">
-
-                          Late arrival · {arrivalTiming.minutesAfterStart} min after the appointment ({arrivalTiming.minutesPastGrace} min past grace)
-
-                        </p>
-
-                      )}
-
-                    </div>
-
-                    <span className={`w-fit whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${badge[a.status]}`}>{label[a.status]}</span>
-
-                  </div>
-
-                  {open && (
-
-                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-
-                      {isToday && <button type="button" onClick={() => arrived(a)} className="min-h-11 rounded-xl bg-[#6D3AA8] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3]">
-
-                        {arrivalTiming?.window === "late" ? "Check in late" : "Arrived"}
-
-                      </button>}
-
-                      {a.status === "booked" && <button type="button" onClick={() => void setStatus(a.id, "confirmed")} className={SMALL_BUTTON}>Mark confirmed</button>}
-
-                      {past && <button type="button" onClick={() => requestConfirmation({ kind: "status", appointment: a, status: "no_show" })} className={SMALL_BUTTON}>No-show</button>}
-
-                      <button type="button" onClick={() => copyLink(a.id)} className={SMALL_BUTTON}>Copy patient link</button>
-
-                      <button type="button" onClick={() => requestConfirmation({ kind: "status", appointment: a, status: "cancelled" })} className="min-h-11 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50">Cancel</button>
-
-                    </div>
-
-                  )}
-
-                </li>
-
-              );
-
-            })}
-
-          </ul>
+          <div className="mt-3 rounded-xl border border-[#E9DDF7]">
+            <div className="hidden grid-cols-[minmax(4.8rem,0.7fr)_minmax(0,2fr)_minmax(5.2rem,0.9fr)_minmax(6rem,0.8fr)] gap-2 border-b border-[#E4D5F6] bg-[#FAF8FF] px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-[#756581] md:grid">
+              <span>Time</span><span>Patient / visit</span><span>Status</span><span className="text-right">Actions</span>
+            </div>
+            {scheduled.length === 0 ? (
+              <p className="p-5 text-center text-sm text-[#6F647A]">No patients match this date or filter.</p>
+            ) : (
+              <ul className="divide-y divide-[#EFE8F5]">
+                {scheduled.map((a) => {
+                  const open = a.status === "booked" || a.status === "confirmed";
+                  const past = clock > 0 && new Date(a.starts_at).getTime() < clock;
+                  const arrivalTiming = open && clock > 0 ? getArrivalTiming(a.starts_at, clock, settings?.grace_minutes ?? 15) : null;
+                  return (
+                    <li key={a.id} className="bg-white px-3 py-3 transition hover:bg-[#FCFAFF]">
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(4.8rem,0.7fr)_minmax(0,2fr)_minmax(5.2rem,0.9fr)_minmax(6rem,0.8fr)] md:items-center">
+                        <p className="font-bold tabular-nums text-[#49365E]">{formatTime(a.starts_at)}</p>
+                        <div className="min-w-0">
+                          <p className="break-words font-semibold text-[#2E1747]">{a.name}</p>
+                          <p className="mt-0.5 truncate text-xs text-[#756581]" title={`${a.reason ?? "No reason"}${a.phone ? ` · ${a.phone}` : ""}`}>{a.reason ?? "No reason"}{a.phone ? ` · ${a.phone}` : ""}</p>
+                          {a.is_minor && <p className="mt-0.5 text-xs text-[#756581]">Guardian: {a.guardian_name ?? "not given"}</p>}
+                          {(a.changed_late || a.reschedule_count > 0) && <p className="mt-0.5 text-xs font-medium text-amber-700">{a.changed_late ? "Late change. " : ""}{a.reschedule_count > 0 ? `Moved ${a.reschedule_count}x.` : ""}</p>}
+                          {isToday && open && arrivalTiming?.window === "grace" && <p className="mt-0.5 text-xs text-amber-700">{arrivalTiming.minutesAfterStart} min late · within grace period</p>}
+                          {isToday && open && arrivalTiming?.window === "late" && <p className="mt-0.5 text-xs text-red-700">Late arrival · {arrivalTiming.minutesAfterStart} min past scheduled time</p>}
+                        </div>
+                        <span className={`w-fit whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${badge[a.status]}`}>{label[a.status]}</span>
+                        <div className="md:justify-self-end">
+                          {open ? (
+                            <details className="group relative open:z-20">
+                              <summary className="inline-flex min-h-10 cursor-pointer list-none items-center rounded-lg border border-[#D8C5EC] bg-white px-3 py-2 text-xs font-bold text-[#5A2E8A] hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCAF4] [&::-webkit-details-marker]:hidden">Actions <span aria-hidden="true" className="ml-1">⌄</span></summary>
+                              <div className="mt-2 flex flex-col gap-2 rounded-xl border border-[#E4D5F6] bg-[#FAF8FF] p-2 md:absolute md:right-0 md:top-full md:z-20 md:w-44 md:shadow-lg">
+                                {isToday && <button type="button" onClick={() => arrived(a)} className="min-h-9 rounded-lg bg-[#6D3AA8] px-3 py-2 text-left text-xs font-bold text-white hover:bg-[#572C87]">{arrivalTiming?.window === "late" ? "Check in late" : "Arrived"}</button>}
+                                {a.status === "booked" && <button type="button" onClick={() => void setStatus(a.id, "confirmed")} className={SMALL_BUTTON}>Mark confirmed</button>}
+                                {past && <button type="button" onClick={() => requestConfirmation({ kind: "status", appointment: a, status: "no_show" })} className={SMALL_BUTTON}>No-show</button>}
+                                <button type="button" onClick={() => copyLink(a.id)} className={SMALL_BUTTON}>Copy patient link</button>
+                                <button type="button" onClick={() => requestConfirmation({ kind: "status", appointment: a, status: "cancelled" })} className="min-h-9 rounded-lg border border-red-200 bg-white px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Cancel</button>
+                              </div>
+                            </details>
+                          ) : <span className="text-xs text-[#9587A5]">—</span>}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
           {waitlist.length > 0 && (
 

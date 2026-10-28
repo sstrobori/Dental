@@ -153,11 +153,11 @@ export default function LoginPage() {
   }
 
   return (
-<div className="admin-ui relative isolate flex items-center justify-center overflow-hidden bg-[#F8F7FC] px-4 py-6 text-[#2E1747] sm:px-6 lg:py-10">
+<div className="admin-ui relative isolate flex min-h-dvh items-center justify-center overflow-hidden bg-[#F8F7FC] px-4 py-6 text-[#2E1747] sm:px-6 lg:py-10">
 
 {/* FULL-SCREEN DENTAL BACKGROUND */}
 <div
-  className="pointer-events-none fixed -inset-3 z-0 scale-105 bg-cover bg-center bg-no-repeat blur-none"
+  className="pointer-events-none absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
   style={{
     backgroundImage: "url('/test-dental-bg.jpg')",
   }}
@@ -166,7 +166,7 @@ export default function LoginPage() {
 
 {/* SUBTLE OVERLAY */}
 <div
-className="pointer-events-none fixed inset-0 z-0 bg-white/15 backdrop-blur-[3px]"
+className="pointer-events-none absolute inset-0 z-0 bg-white/15 backdrop-blur-[3px]"
 />
 
 

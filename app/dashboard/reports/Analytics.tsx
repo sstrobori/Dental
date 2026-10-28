@@ -177,13 +177,14 @@ export default function Analytics({ clinicId }: { clinicId: string }) {
   const days = data?.weekdays ?? [];
   const weekdayItems: ChartItem[] = DAY_NAMES.map((name, index) => {
     const d = days.find((item) => item.weekday === index + 1);
-    const value = Number(d?.per_day ?? 0);
+    // Display actual visit counts, not fractional daily averages.
+    const value = Number(d?.total ?? 0);
     return {
       key: index + 1,
       label: name,
       shortLabel: name.slice(0, 3),
       value,
-      detail: `${name}: ${formatNumber(value)} patients per day on average; ${Number(d?.total ?? 0)} visits total`,
+      detail: `${name}: ${formatNumber(value)} total visits during the selected period`,
     };
   });
   const peakDayValue = Math.max(0, ...weekdayItems.map((item) => item.value));
@@ -240,13 +241,13 @@ export default function Analytics({ clinicId }: { clinicId: string }) {
           <ChartCard
             eyebrow="Weekly pattern"
             title="Busiest day of the week"
-            description="Typical patients per weekday, averaged over the selected period."
+            description="Total patient visits for each weekday during the selected period."
             insightLabel="Peak weekday"
-            insight={`${topDays.map((item) => item.label).join(" & ")} · ${formatNumber(peakDayValue)} per day`}
+            insight={`${topDays.map((item) => item.label).join(" & ")} · ${formatNumber(peakDayValue)} visits`}
             empty={peakDayValue === 0}
-            footer={`Based on ${data.weeks_used} ${data.weeks_used === 1 ? "week" : "weeks"} of available data.${data.weeks_used < 4 ? " A short history may not reflect the usual pattern." : ""}`}
+            footer={`Totals across ${data.weeks_used} ${data.weeks_used === 1 ? "week" : "weeks"} of available data.${data.weeks_used < 4 ? " A short history may not reflect the usual pattern." : ""}`}
           >
-            <VerticalBarChart items={weekdayItems} unit="Average patients per weekday" minWidth={400} />
+            <VerticalBarChart items={weekdayItems} unit="Total patient visits by weekday" minWidth={400} />
           </ChartCard>
 
           <ChartCard

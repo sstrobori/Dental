@@ -34,11 +34,6 @@ const NAV: {
     icon: "calendar",
   },
   {
-    href: "/dashboard/appointments/settings",
-    label: "Clinic settings",
-    icon: "settings",
-  },
-  {
     href: "/dashboard/calendar",
     label: "Calendar",
     icon: "servedCalendar",
@@ -47,16 +42,6 @@ const NAV: {
     href: "/dashboard/patients",
     label: "Patients",
     icon: "patients",
-  },
-  {
-    href: "/dashboard/history",
-    label: "History",
-    icon: "history",
-  },
-  {
-    href: "/dashboard/followups",
-    label: "Follow-ups",
-    icon: "followups",
   },
   {
     href: "/dashboard/reports",
@@ -69,6 +54,11 @@ const NAV: {
     label: "Team",
     icon: "team",
     ownerOnly: true,
+  },
+  {
+    href: "/dashboard/appointments/settings",
+    label: "Clinic settings",
+    icon: "settings",
   },
 ];
 
@@ -255,6 +245,12 @@ export default function AdminShell({
 
   const active = (href: string) => {
     if (href === "/dashboard") return pathname === href;
+    if (href === "/dashboard/patients") {
+      // Visit history lives under an existing route but belongs to Patients now.
+      return pathname.startsWith("/dashboard/patients") ||
+        pathname.startsWith("/dashboard/history") ||
+        pathname.startsWith("/dashboard/followups");
+    }
     if (href === "/dashboard/appointments") {
       return pathname.startsWith(href) &&
         !pathname.startsWith("/dashboard/appointments/settings");
