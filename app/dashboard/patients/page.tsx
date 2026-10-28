@@ -413,7 +413,6 @@ export default function PatientsPage() {
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8b5cb5]">Patient directory</p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Patients</h1>
         </div>
 

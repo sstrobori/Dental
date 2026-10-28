@@ -4,7 +4,6 @@ export default function ClinicSettingsPage() {
   return (
     <main className="w-full px-4 py-6 text-[#2E1747] sm:px-6 sm:py-8 lg:px-8">
       <header className="mb-7 mt-3">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8B5CB5]">Administration</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Clinic settings</h1>
       </header>
       <nav aria-label="Clinic settings sections" className="grid gap-4 md:grid-cols-2">

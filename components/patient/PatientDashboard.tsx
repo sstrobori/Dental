@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 import { formatDateTime } from "@/lib/today";
 import QueueTicketCard from "@/components/patient/QueueTicketCard";
-import AppointmentView from "@/components/patient/AppointmentView";
 import { useVisitReasons } from "@/lib/useVisitReasons";
 import { loadQueueEstimateMetadata } from "@/lib/queueEstimate";
 
@@ -19,7 +19,7 @@ type HistRow = {
   status: string; ref_id: string; clinic_id: string;
 };
 
-export default function PatientDashboard({ clinicId, name }: { clinicId: string; name: string | null }) {
+export default function PatientDashboard({ clinicId, name }: { clinicId: string; name: string | null; clinicName?: string | null }) {
   const supabase = useMemo(() => createClient(), []);
   const [active, setActive] = useState<Active[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -27,7 +27,6 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
   const [loaded, setLoaded] = useState(false);
   const [who, setWho] = useState("");
   const [reason, setReason] = useState("");
-  const [openAppt, setOpenAppt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -85,15 +84,22 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
         { event: "*", schema: "public", table: "queue_entries", filter: `clinic_id=eq.${clinicId}` },
         () => loadActive(),
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "appointments", filter: `clinic_id=eq.${clinicId}` },
+        () => { void loadAll(); },
+      )
       .subscribe();
     const timer = window.setInterval(loadActive, 5000);
-    const onOnline = () => { void loadActive(); };
-    const onVisibility = () => { if (document.visibilityState === "visible") loadActive(); };
+    const appointmentTimer = window.setInterval(() => void loadAll(), 30000);
+    const onOnline = () => { void loadAll(); };
+    const onVisibility = () => { if (document.visibilityState === "visible") void loadAll(); };
     window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearTimeout(kickoff);
       window.clearInterval(timer);
+      window.clearInterval(appointmentTimer);
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
       supabase.removeChannel(channel);
@@ -131,41 +137,35 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
 
       <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col gap-5">
-          <section aria-labelledby="queue-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-6">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">Live status</p>
-                <h3 id="queue-heading" className="mt-1 text-lg font-bold text-[#2E1747]">Your queue</h3>
-              </div>
-              {active.length > 0 && (
+          {active.length > 0 && (
+            <section aria-labelledby="queue-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-6">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">Live status</p>
+                  <h3 id="queue-heading" className="mt-1 text-lg font-bold text-[#2E1747]">Your queue</h3>
+                </div>
                 <span className="rounded-full bg-[#F2EAFF] px-3 py-1 text-xs font-semibold text-[#6D3AA8]">
                   {active.some((visit) => visit.status === "called") ? "Called" : "In line"}
                 </span>
-              )}
-            </div>
-
-            {active.length === 0 && (
-              <div className="rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#6F647A]">
-                You are not in the queue at the moment.
               </div>
-            )}
 
-            <div className="flex flex-col gap-3" aria-live="polite">
-              {active.map((v) => (
-                <QueueTicketCard
-                  key={v.entry_id}
-                  entryId={v.entry_id}
-                  queueNumber={v.queue_number}
-                  status={v.status}
-                  peopleAhead={v.people_ahead}
-                  estMinutes={v.est_minutes}
-                  nowServing={v.now_serving}
-                  currentVisitDelayed={v.current_visit_delayed}
-                  onLeft={() => loadActive()}
-                />
-              ))}
-            </div>
-          </section>
+              <div className="flex flex-col gap-3" aria-live="polite">
+                {active.map((v) => (
+                  <QueueTicketCard
+                    key={v.entry_id}
+                    entryId={v.entry_id}
+                    queueNumber={v.queue_number}
+                    status={v.status}
+                    peopleAhead={v.people_ahead}
+                    estMinutes={v.est_minutes}
+                    nowServing={v.now_serving}
+                    currentVisitDelayed={v.current_visit_delayed}
+                    onLeft={() => loadActive()}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
           {active.length === 0 && (
             <section aria-labelledby="join-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-6">
@@ -236,21 +236,25 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
                     <div className="min-w-0">
                       <p className="font-bold text-[#2E1747]">{formatDateTime(r.happened_at)}</p>
                       <p className="mt-1 text-[#6F647A]">{r.person}{r.reason ? ` · ${r.reason}` : ""}</p>
+<span
+  className={`mt-3 inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
+    r.status === "booked"
+      ? "border-[#F2DB9C] bg-[#FFF7E6] text-[#925900]"
+      : "border-[#BCE5CA] bg-[#E8F6ED] text-[#247344]"
+  }`}
+>
+  {r.status === "booked"
+    ? "Waiting for clinic confirmation"
+    : "Confirmed"}
+</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setOpenAppt(openAppt === r.ref_id ? "" : r.ref_id)}
-                      aria-expanded={openAppt === r.ref_id}
-                      className="min-h-11 w-full shrink-0 rounded-xl border border-[#D7C4EA] bg-white px-4 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCDEF] sm:w-auto"
+                    <Link
+                      href={`/patient/${encodeURIComponent(clinicId)}/appointments/${encodeURIComponent(r.ref_id)}`}
+                      className="flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl border border-[#D7C4EA] bg-white px-4 py-2 text-sm font-semibold text-[#5C327F] transition hover:bg-[#F2EAFF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DDCDEF] sm:w-auto"
                     >
-                      {openAppt === r.ref_id ? "Close details" : "View or change"}
-                    </button>
+                      View details
+                    </Link>
                   </div>
-                  {openAppt === r.ref_id && (
-                    <div className="mt-4 border-t border-[#E4D5F6] pt-4">
-                      <AppointmentView appointmentId={r.ref_id} />
-                    </div>
-                  )}
                 </article>
               ))}
             </div>

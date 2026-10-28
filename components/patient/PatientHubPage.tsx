@@ -15,7 +15,6 @@ import { startOfTodayManila } from "@/lib/today";
 import JoinForm from "@/components/patient/JoinForm";
 import BookForm from "@/components/patient/BookForm";
 import GuestQueueTicket from "@/components/patient/GuestQueueTicket";
-import AppointmentView from "@/components/patient/AppointmentView";
 import AccountPanel, {
   type Account,
 } from "@/components/patient/AccountPanel";
@@ -484,6 +483,7 @@ function PatientHub({ mode }: { mode: "guest" | "patient" }) {
           <PatientDashboard
             clinicId={clinicId}
             name={account?.name ?? null}
+            clinicName={info.name}
           />
         )}
 
@@ -510,16 +510,11 @@ function PatientHub({ mode }: { mode: "guest" | "patient" }) {
             <BookForm
               clinicId={clinicId}
               onDone={(appointmentId) => {
-                if (isPatient) {
-                  setTab("dashboard");
-                } else {
-                  persist({
-                    ...saved,
-                    appointmentId,
-                  });
-
-                  setTab("visit");
+                if (!isPatient) {
+                  persist({ ...saved, appointmentId });
                 }
+                const portal = isPatient ? "patient" : "guest";
+                router.push(`/${portal}/${encodeURIComponent(clinicId)}/appointments/${encodeURIComponent(appointmentId)}`);
               }}
             />
           )}
@@ -548,22 +543,19 @@ function PatientHub({ mode }: { mode: "guest" | "patient" }) {
               )}
 
               {saved.appointmentId && (
-                <section>
-                  <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.14em] text-[#7B4BB3]">
+                <section className="rounded-2xl border border-[#E4D5F6] bg-white p-5 shadow-sm">
+                  <h2 className="text-lg font-bold text-[#2E1747]">
                     Your appointment
                   </h2>
-
-                  <AppointmentView
-                    appointmentId={
-                      saved.appointmentId
-                    }
-                    onOpenTicket={(entryId) =>
-                      persist({
-                        ...saved,
-                        entryId,
-                      })
-                    }
-                  />
+                  <p className="mt-2 text-sm leading-6 text-[#6F647A]">
+                    View the appointment details, change the time, or cancel your booking.
+                  </p>
+                  <Link
+                    href={`/guest/${encodeURIComponent(clinicId)}/appointments/${encodeURIComponent(saved.appointmentId)}`}
+                    className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#6D3AA8] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3]"
+                  >
+                    View appointment details
+                  </Link>
                 </section>
               )}
             </div>

@@ -79,7 +79,6 @@ export default function FollowUpsPage() {
   return (
     <div className="w-full p-4 sm:p-6 lg:p-8">
       <header>
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8b5cb5]">Patient recall</p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Due for a visit</h1>
       </header>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-[#756581]">

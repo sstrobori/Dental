@@ -8,7 +8,7 @@ import { useVisitReasons } from "@/lib/useVisitReasons";
 
 const FIELD_CLASS = "min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-4 py-3 text-base text-[#2E1747] outline-none transition placeholder:text-[#9B8FA6] focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]";
 
-type Info = { name: string; accepting: boolean; deposit_amount: number; deposit_reasons: string[] };
+type Info = { name: string; accepting: boolean };
 
 export default function BookForm({
   clinicId,
@@ -201,12 +201,6 @@ export default function BookForm({
             </p>
           )}
         </div>
-
-        {info.deposit_amount > 0 && (info.deposit_reasons.length === 0 || info.deposit_reasons.includes(reason)) && (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-            This visit needs a deposit of {"\u20B1"}{info.deposit_amount}. Payment details are shown after booking.
-          </p>
-        )}
 
         {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
         <button disabled={busy} aria-busy={busy} className="min-h-12 rounded-xl bg-[#6D3AA8] px-5 py-3 text-base font-bold text-white shadow-sm transition hover:bg-[#572C87] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#DCCAF3] disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg">

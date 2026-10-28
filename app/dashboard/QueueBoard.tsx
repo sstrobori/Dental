@@ -502,7 +502,6 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
         <section aria-labelledby="serving-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8151AE]">At the counter</p>
               <h2 id="serving-heading" className="mt-1 text-lg font-bold">Now serving</h2>
             </div>
           <span className="rounded-full border border-[#BCE5CA] bg-[#E8F6ED] px-3 py-1 text-xs font-semibold text-[#247344]">
@@ -572,7 +571,6 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
         <section aria-labelledby="waiting-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8151AE]">Next patients</p>
               <h2 id="waiting-heading" className="mt-1 text-lg font-bold">Waiting queue</h2>
             </div>
           <span className="rounded-full border border-[#F2DB9C] bg-[#FFF4D9] px-3 py-1 text-xs font-semibold text-[#925900]">
@@ -651,9 +649,8 @@ className="min-h-12 w-full shrink-0 rounded-xl border border-[#93C5FD] bg-[#DBEA
           )}
         </section>
         <section aria-labelledby="walkin-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-5 xl:col-span-3">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8151AE]">Front desk entry</p>
           <h2 id="walkin-heading" className="mt-1 text-lg font-bold">Add a walk-in</h2>
-          <p className="mt-1 text-sm text-[#756581]">Create a queue ticket for a patient at the counter.</p>
+          <p className="mt-1 text-sm text-[#756581]">Create a queue number for a walk-in patient.</p>
           <form onSubmit={addWalkIn} className="mt-5 flex flex-col gap-4">
             <div>
               <label htmlFor="walkin-name" className="mb-1.5 block text-sm font-semibold">Patient name <RequiredMark /></label>

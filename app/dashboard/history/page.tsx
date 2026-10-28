@@ -117,9 +117,7 @@ export default function HistoryPage() {
   return (
     <main className="w-full px-4 pb-10 pt-6 text-[#2E1747] sm:px-6 sm:pt-8 lg:px-8">
       <header className="mb-5">
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">Patient records</p>
-        <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Visit history</h1>
-        <p className="mt-1 text-sm text-[#756581]">Find a patient and open their complete visit history.</p>
+        <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Patient Visit history</h1>
       </header>
 
       <section aria-label="Patient history directory" className="overflow-hidden rounded-2xl border border-[#E4D5F6] bg-white shadow-sm">
