@@ -43,7 +43,6 @@ export default function SlotPicker({
 
   return (
     <div className="flex flex-col gap-3">
-      {appearance === "patient" && <label htmlFor={`appointment-day-${clinicId}`} className="text-sm font-semibold text-[#49355f]">Preferred date</label>}
       <input
         id={`appointment-day-${clinicId}`}
         type="date" className="rounded-lg border p-3" min={todayManila()} max={addDaysManila(60)} value={day}

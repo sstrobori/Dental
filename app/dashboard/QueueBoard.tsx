@@ -429,6 +429,10 @@ export default function QueueBoard({
       setWalkInError("Enter the parent or guardian's name.");
       return;
     }
+    if (!reason.trim()) {
+      setWalkInError("Please select a reason for visit.");
+      return;
+    }
     setAdding(true);
     try {
       const { data, error: insertError } = await supabase
@@ -801,11 +805,25 @@ export default function QueueBoard({
               />
             </div>
             <div>
-              <label htmlFor="walkin-reason" className="mb-1.5 block text-sm font-semibold">Reason for visit <span className="font-normal text-[#756581]">(optional)</span></label>
-              <select id="walkin-reason" className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]" value={reason} onChange={(e) => setReason(e.target.value)}>
-                <option value="">Select a reason</option>
-                {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
+<label
+  htmlFor="walkin-reason"
+  className="mb-1.5 block text-sm font-semibold"
+>
+  Reason for visit <RequiredMark />
+</label>
+
+<select
+  id="walkin-reason"
+  required
+  className="min-h-12 w-full rounded-xl border border-[#E4D5F6] bg-white px-3 py-2 outline-none focus:border-[#8B5CF6] focus:ring-4 focus:ring-[#F2EAFF]"
+  value={reason}
+  onChange={(e) => setReason(e.target.value)}
+>
+  <option value="">Select a reason</option>
+  {REASONS.map((r) => (
+    <option key={r} value={r}>{r}</option>
+  ))}
+</select>
             </div>
             <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl bg-[#FAF8FF] px-3 py-2 text-sm font-medium">
               <input className="size-5 accent-[#6D3AA8]" type="checkbox" checked={isMinor} onChange={(e) => setIsMinor(e.target.checked)} />

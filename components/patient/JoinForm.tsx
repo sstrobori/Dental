@@ -45,7 +45,7 @@ export default function JoinForm({
     setError("");
     if (!name.trim()) return setError(isMinor ? "Enter the child's name." : "Enter your name.");
     if (isMinor && !guardian.trim()) return setError("Enter the parent or guardian's name.");
-
+    if (!reason.trim()) return setError("Please select a reason for visit.");
     setBusy(true);
     const { data, error } = await supabase.rpc("join_queue", {
       p_clinic_id: clinicId,
@@ -112,14 +112,26 @@ export default function JoinForm({
         </div>
 
         <div>
-          <label htmlFor="queue-reason" className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-[#49365E]">
-            <span>Reason for visit</span>
-            <span className="text-xs font-normal text-[#82758E]">(optional)</span>
-          </label>
-          <select id="queue-reason" className={FIELD_CLASS} value={reason} onChange={(e) => setReason(e.target.value)}>
-            <option value="">Select a reason</option>
-            {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
+<label
+  htmlFor="queue-reason"
+  className="mb-2 block text-sm font-semibold text-[#49365E]"
+>
+  Reason for visit{" "}
+  <span className="text-red-500" aria-hidden="true">*</span>
+</label>
+
+<select
+  id="queue-reason"
+  className={FIELD_CLASS}
+  value={reason}
+  onChange={(e) => setReason(e.target.value)}
+  required
+>
+  <option value="">Select a reason</option>
+  {REASONS.map((r) => (
+    <option key={r} value={r}>{r}</option>
+  ))}
+</select>
           {reasonList.find((r) => r.name === reason)?.note && (
             <p className="mt-2 rounded-xl bg-[#F2EAFF] p-3 text-sm text-[#5A2E8A]">
               {reasonList.find((r) => r.name === reason)?.note}

@@ -480,6 +480,7 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
     if (!name.trim()) return setBookingError("Enter the patient's name.");
     if (!slot) return setBookingError("Pick a date and a time.");
     if (isMinor && !guardian.trim()) return setBookingError("Enter the guardian's name.");
+    if (!reason.trim()) return setBookingError("Please select a reason for visit.");
 
     setBookingBusy(true);
     try {
@@ -915,17 +916,23 @@ export default function AppointmentsWorkspace({ view }: { view: "scheduled" | "b
 
               </label>
 
-              <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]"><span>Reason for visit <span className="text-xs font-normal text-[#80748B]">(optional)</span></span>
+<label className="flex flex-col gap-1.5 text-sm font-semibold text-[#49365E]">
+  <span>
+    Reason for visit <RequiredMark />
+  </span>
 
-                <select className={FIELD_CLASS} value={reason} onChange={(e) => setReason(e.target.value)}>
-
-                  <option value="">Select a reason</option>
-
-                  {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-
-                </select>
-
-              </label>
+  <select
+    className={FIELD_CLASS}
+    value={reason}
+    onChange={(e) => setReason(e.target.value)}
+    required
+  >
+    <option value="">Select a reason</option>
+    {REASONS.map((r) => (
+      <option key={r} value={r}>{r}</option>
+    ))}
+  </select>
+</label>
 
               <label className="flex min-h-12 items-center gap-3 rounded-xl bg-[#FAF8FF] px-4 py-3 text-sm font-semibold text-[#49365E]">
 

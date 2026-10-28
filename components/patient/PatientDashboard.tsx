@@ -14,6 +14,12 @@ type Active = {
   current_visit_delayed?: boolean;
 };
 type Profile = { patient_id: string; clinic_id: string; person: string };
+type QueuePreview = {
+  waiting_count: number;
+  called_count: number;
+  estimated_minutes: number;
+  used_default_duration: boolean;
+};
 type HistRow = {
   kind: string; happened_at: string; person: string; reason: string | null;
   status: string; ref_id: string; clinic_id: string;
@@ -29,6 +35,9 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [queuePreview, setQueuePreview] = useState<QueuePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(true);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
 
   const { names: REASONS } = useVisitReasons(clinicId, "walk_in");
 
@@ -61,6 +70,44 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
     });
   }, [supabase, clinicId]);
 
+  // Read only aggregated queue information; never download other patients' details.
+  const loadQueuePreview = useCallback(async () => {
+    const { data, error: previewError } = await supabase.rpc("queue_join_preview", {
+      p_clinic_id: clinicId,
+    });
+    if (previewError || !data) {
+      setQueuePreview(null);
+      setPreviewUnavailable(true);
+    } else {
+      const result = data as QueuePreview;
+      setQueuePreview({
+        waiting_count: Number(result.waiting_count ?? 0),
+        called_count: Number(result.called_count ?? 0),
+        estimated_minutes: Number(result.estimated_minutes ?? 0),
+        used_default_duration: Boolean(result.used_default_duration),
+      });
+      setPreviewUnavailable(false);
+    }
+    setPreviewLoading(false);
+  }, [supabase, clinicId]);
+
+  useEffect(() => {
+    const kickoff = window.setTimeout(() => void loadQueuePreview(), 0);
+    const timer = window.setInterval(() => void loadQueuePreview(), 15000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadQueuePreview();
+    };
+    const onOnline = () => void loadQueuePreview();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.clearTimeout(kickoff);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [loadQueuePreview]);
+
   const loadAll = useCallback(async () => {
     const [p, h] = await Promise.all([supabase.rpc("my_profiles"), supabase.rpc("my_history")]);
     const mine = ((p.data ?? []) as Profile[]).filter((x) => x.clinic_id === clinicId);
@@ -82,7 +129,7 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "queue_entries", filter: `clinic_id=eq.${clinicId}` },
-        () => loadActive(),
+        () => { void loadActive(); void loadQueuePreview(); },
       )
       .on(
         "postgres_changes",
@@ -104,11 +151,17 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
       document.removeEventListener("visibilitychange", onVisibility);
       supabase.removeChannel(channel);
     };
-  }, [supabase, clinicId, loadAll, loadActive]);
+  }, [supabase, clinicId, loadAll, loadActive, loadQueuePreview]);
 
   async function join() {
     setError("");
     if (!who) return;
+
+    if (!reason.trim()) {
+      setError("Please select a reason for visit.");
+      return;
+    }
+
     setBusy(true);
     const { error } = await supabase.rpc("join_queue_as_profile", { p_patient_id: who, p_reason: reason });
     if (error) {
@@ -171,6 +224,57 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
             <section aria-labelledby="join-heading" className="rounded-2xl border border-[#E4D5F6] bg-white p-4 shadow-sm sm:p-6">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B5CB5]">Walk-in visit</p>
               <h3 id="join-heading" className="mt-1 text-lg font-bold text-[#2E1747]">Join the queue</h3>
+{/* Live queue preview */}
+<div className="mt-4" aria-label="Live queue preview" aria-live="polite">
+  {queuePreview ? (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl bg-[#F2EAFF] p-4">
+          <p className="text-xs leading-5 text-[#756581]">
+            People waiting now
+          </p>
+          <p className="mt-1 text-2xl font-extrabold tabular-nums text-[#6D3AA8]">
+            {queuePreview.waiting_count}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-[#F2EAFF] p-4">
+          <p className="text-xs leading-5 text-[#756581]">
+            Your estimated wait
+          </p>
+          <p className="mt-1 text-2xl font-extrabold tabular-nums text-[#6D3AA8]">
+            ~{queuePreview.estimated_minutes}{" "}
+            <span className="text-sm font-semibold">min</span>
+          </p>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs leading-5 text-[#756581]">
+        If you join now, there{" "}
+        {queuePreview.waiting_count === 1 ? "is" : "are"}{" "}
+        {queuePreview.waiting_count}{" "}
+        {queuePreview.waiting_count === 1 ? "patient" : "patients"} waiting.
+        {queuePreview.called_count > 0 &&
+          ` ${queuePreview.called_count} ${
+            queuePreview.called_count === 1
+              ? "patient is"
+              : "patients are"
+          } currently called; this is included in the estimate.`}
+        {" "}The wait is approximate and may change as patients are served.
+        {queuePreview.used_default_duration &&
+          " This estimate uses a starting assumption of 20 minutes per patient."}
+      </p>
+    </>
+  ) : (
+    <p className="rounded-xl bg-[#F2EAFF] p-3 text-sm text-[#756581]">
+      {previewLoading
+        ? "Checking the live queue…"
+        : previewUnavailable
+          ? "Queue preview is temporarily unavailable. You can still join the queue."
+          : "Queue preview unavailable."}
+    </p>
+  )}
+</div>
               {profiles.length === 0 ? (
                 <p className="mt-4 rounded-xl bg-[#FAF8FF] p-4 text-sm text-[#6F647A]">
                   No one on your account is linked to this clinic yet. Ask the front desk for help.
@@ -191,22 +295,24 @@ export default function PatientDashboard({ clinicId, name }: { clinicId: string;
                       </select>
                     </label>
                   )}
-                  <label className="flex flex-col gap-1.5 text-sm font-semibold text-[#3E2854]">
-                    <span className="flex items-center justify-between gap-2">
-                      <span>Reason for visit</span>
-                      <span className="text-xs font-normal text-[#80748B]">
-                        (optional)
-                      </span>
-                    </span>
-                    <select
-                      className="min-h-12 rounded-xl border border-[#DCCBED] bg-white px-3 text-base font-normal text-[#2E1747] outline-none transition focus:border-[#8B5CB5] focus:ring-4 focus:ring-[#EDE3F8]"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                    >
-                      <option value="">Select a reason</option>
-                      {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </label>
+<label className="flex flex-col gap-1.5 text-sm font-semibold text-[#3E2854]">
+  <span>
+    Reason for visit{" "}
+    <span className="text-red-500" aria-hidden="true">*</span>
+  </span>
+
+  <select
+    className="min-h-12 rounded-xl border border-[#DCCBED] bg-white px-3 text-base font-normal text-[#2E1747] outline-none transition focus:border-[#8B5CB5] focus:ring-4 focus:ring-[#EDE3F8]"
+    value={reason}
+    onChange={(e) => setReason(e.target.value)}
+    required
+  >
+    <option value="">Select a reason</option>
+    {REASONS.map((r) => (
+      <option key={r} value={r}>{r}</option>
+    ))}
+  </select>
+</label>
                   <button
                     type="button"
                     onClick={join}
