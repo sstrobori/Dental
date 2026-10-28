@@ -18,9 +18,15 @@ async function DashboardContent({
 
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+const {
+  data: { user },
+  error: authError,
+} = await supabase.auth.getUser();
+
+console.log("[Dashboard authentication]", {
+  authenticated: Boolean(user),
+  error: authError?.message ?? null,
+});
 
   if (!user) {
     redirect("/login");

@@ -153,8 +153,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="admin-ui relative isolate flex min-h-dvh items-center justify-center overflow-hidden bg-[#F8F7FC] px-4 py-6 text-[#2E1747] sm:px-6 lg:py-10">
-
+<div className="admin-ui relative isolate flex items-center justify-center overflow-hidden bg-[#F8F7FC] px-4 py-6 text-[#2E1747] sm:px-6 lg:py-10">
 
 {/* FULL-SCREEN DENTAL BACKGROUND */}
 <div
@@ -181,8 +180,7 @@ className="pointer-events-none fixed inset-0 z-0 bg-white/15 backdrop-blur-[3px]
         aria-hidden="true"
       />
 
-      <main className="relative z-10 mx-auto grid w-full max-w-[1040px] overflow-hidden rounded-[28px] border border-[#E4D5F6] bg-white shadow-[0_24px_80px_rgba(65,35,95,0.12)] lg:min-h-[640px] lg:grid-cols-[0.95fr_1.05fr]">
-
+<main className="relative z-10 mx-auto grid w-full max-w-[1040px] overflow-hidden rounded-[28px] border border-[#E4D5F6] bg-white shadow-[0_24px_80px_rgba(65,35,95,0.12)] lg:grid-cols-[0.95fr_1.05fr]">
         {/* LEFT: BRANDING PANEL */}
         <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#7B46BA] via-[#62349B] to-[#3E205F] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
 
@@ -220,9 +218,10 @@ className="pointer-events-none fixed inset-0 z-0 bg-white/15 backdrop-blur-[3px]
             <div className="mb-4 h-1 w-12 rounded-full bg-white/70" />
 
 
-              <h2 className="max-w-sm text-3xl font-extrabold leading-tight tracking-tight xl:text-4xl">
-                Smarter queues. Simpler appointments.
-              </h2>
+<h2 className="max-w-sm text-3xl font-extrabold leading-tight tracking-tight xl:text-4xl">
+  <span className="block whitespace-nowrap">Smarter queues.</span>
+  <span className="block whitespace-nowrap">Simpler appointments.</span>
+</h2>
 
             {/* FEATURE LIST */}
             <div className="mt-9 flex flex-col gap-3">
